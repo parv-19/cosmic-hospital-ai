@@ -1,0 +1,21 @@
+{
+  "name": "ai-hospital-telephony",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build:shared": "pnpm --filter @ai-hospital/shared-config --filter @ai-hospital/shared-utils --filter @ai-hospital/shared-db --filter @ai-hospital/shared-redis build",
+    "dev": "pnpm run build:shared && pnpm --parallel --filter @ai-hospital/doctor-service --filter @ai-hospital/appointment-service --filter @ai-hospital/ai-service --filter @ai-hospital/bot-engine --filter @ai-hospital/telephony-gateway --filter @ai-hospital/admin-web dev",
+    "build": "pnpm -r build",
+    "start": "pnpm run build && pnpm --parallel --filter @ai-hospital/doctor-service --filter @ai-hospital/appointment-service --filter @ai-hospital/ai-service --filter @ai-hospital/bot-engine --filter @ai-hospital/telephony-gateway --filter @ai-hospital/admin-web start"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2"
+  }
+}
