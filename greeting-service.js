@@ -55,15 +55,16 @@ function synthesizeMockGreeting(text, maxChunkSize) {
 }
 
 async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger) {
+    const resolvedConfig = resolveSarvamTtsConfig(config);
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => controller.abort(new Error('Sarvam TTS request timed out')), timeoutMs);
 
     try {
         logger.log('[greeting] Sarvam TTS request start', {
-            model: config.sarvamTtsModel,
-            speaker: config.sarvamTtsSpeaker,
-            language: config.sarvamTtsLanguage,
-            sampleRate: config.sarvamTtsSampleRate,
+            model: resolvedConfig.model,
+            speaker: resolvedConfig.speaker,
+            language: resolvedConfig.language,
+            sampleRate: resolvedConfig.sampleRate,
             textLength: text.length
         });
 
@@ -75,10 +76,10 @@ async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger
             },
             body: JSON.stringify({
                 text,
-                target_language_code: config.sarvamTtsLanguage,
-                speaker: config.sarvamTtsSpeaker,
-                model: config.sarvamTtsModel,
-                speech_sample_rate: config.sarvamTtsSampleRate,
+                target_language_code: resolvedConfig.language,
+                speaker: resolvedConfig.speaker,
+                model: resolvedConfig.model,
+                speech_sample_rate: resolvedConfig.sampleRate,
                 output_audio_codec: 'wav'
             }),
             signal: controller.signal
@@ -98,7 +99,7 @@ async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger
 
         const decodedAudio = decodeBase64Audio(encodedAudio);
         const normalizedAudio = normalizeTelephonyPcm(decodedAudio, {
-            expectedSampleRate: config.sarvamTtsSampleRate
+            expectedSampleRate: resolvedConfig.sampleRate
         });
 
         logger.log(`[greeting] Sarvam TTS success bytes=${normalizedAudio.length}`);
@@ -115,6 +116,15 @@ async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger
     } finally {
         clearTimeout(timeoutHandle);
     }
+}
+
+function resolveSarvamTtsConfig(config) {
+    return {
+        model: String(config?.sarvamTtsModel || 'bulbul:v3'),
+        speaker: String(config?.sarvamTtsSpeaker || 'shubh').toLowerCase(),
+        language: String(config?.sarvamTtsLanguage || 'en-IN'),
+        sampleRate: Number(config?.sarvamTtsSampleRate) || 8000
+    };
 }
 
 function decodeBase64Audio(encodedAudio) {

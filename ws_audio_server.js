@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { greetingConfig } = require('./greeting-config');
 const { createGreetingService } = require('./greeting-service');
+const { createSttService } = require('./stt-service');
 const logger = console;
 
 const activeSessions = new Set();
@@ -19,6 +20,10 @@ const INTERVAL_MS = 100;
 const MIN_INBOUND_CHUNKS = 20;
 const BOT_ENGINE_URL = 'http://localhost:4004/process-call';
 const PLAY_WELCOME_FILE = greetingConfig.playWelcomeFile;
+const END_OF_SPEECH_MS = greetingConfig.endOfSpeechMs;
+const MIN_UTTERANCE_MS = greetingConfig.minUtteranceMs;
+const UTTERANCE_MAX_MS = greetingConfig.utteranceMaxMs;
+const SPEECH_CHUNK_AVG_ABS_THRESHOLD = 250;
 const DEMO_CALLER_UTTERANCES = [
     'appointment book karna hai',
     'cardiologist',
@@ -36,6 +41,10 @@ const greetingService = createGreetingService({
     logger,
     maxChunkSize: MAX_CHUNK_SIZE
 });
+const sttService = createSttService({
+    logger,
+    sourceSampleRate: 8000
+});
 
 /* =====================
    WS SERVER
@@ -50,6 +59,10 @@ logger.log(`WS Audio Server listening on ${PORT}`);
 logger.log(`PLAY_WELCOME_FILE=${PLAY_WELCOME_FILE}`);
 logger.log(`ENABLE_DYNAMIC_GREETING=${greetingConfig.enableDynamicGreeting}`);
 logger.log(`GREETING_TTS_PROVIDER=${greetingConfig.greetingTtsProvider}`);
+logger.log(`STT_PROVIDER=${greetingConfig.sttProvider}`);
+logger.log(`END_OF_SPEECH_MS=${END_OF_SPEECH_MS}`);
+logger.log(`MIN_UTTERANCE_MS=${MIN_UTTERANCE_MS}`);
+logger.log(`UTTERANCE_MAX_MS=${UTTERANCE_MAX_MS}`);
 if (!fs.existsSync(WELCOME_FILE)) {
     logger.error(`WELCOME_FILE missing: ${WELCOME_FILE}`);
 } else {
@@ -79,6 +92,12 @@ function createSessionState(ws) {
         RECV_CHUNK: 0,
         inboundAudioData: [],
         maxAudioDataLen: 2048,
+        currentUtteranceChunks: [],
+        speechStartedAt: 0,
+        lastInboundAt: 0,
+        droppedInboundChunks: 0,
+        turnState: 'LISTENING',
+        speakingSource: '',
 
         /* outbound (TTS / file -> Asterisk) */
         SEND_CHUNK: 0,
@@ -98,6 +117,7 @@ function createSessionState(ws) {
         minProcessGapMs: 4000,
         demoTurnIndex: 0,
         demoCompleted: false,
+        hangupSent: false,
     };
 }
 
@@ -173,11 +193,33 @@ function _onAudio(state, chunk) {
     }
 
     state.RECV_CHUNK++;
-    if (state.inboundAudioData.length >= state.maxAudioDataLen) {
-        logger.error('inboundAudioData overflow at '+state.SEND_CHUNK + '/'+ state.RECV_CHUNK + ' ' + state.inboundAudioData.length);
-        state.inboundAudioData.shift();
+
+    if (state.turnState === 'SPEAKING') {
+        state.droppedInboundChunks += 1;
+        return;
     }
-    state.inboundAudioData.push(chunk);
+
+    if (state.turnState !== 'LISTENING') {
+        return;
+    }
+
+    const now = Date.now();
+
+    if (!hasSpeechEnergy(chunk)) {
+        return;
+    }
+
+    if (!state.speechStartedAt) {
+        state.speechStartedAt = now;
+    }
+
+    state.lastInboundAt = now;
+
+    if (state.currentUtteranceChunks.length >= state.maxAudioDataLen) {
+        logger.error('currentUtteranceChunks overflow at '+state.SEND_CHUNK + '/'+ state.RECV_CHUNK + ' ' + state.currentUtteranceChunks.length);
+        state.currentUtteranceChunks.shift();
+    }
+    state.currentUtteranceChunks.push(chunk);
 }
 
 function startAudioReceiver(state) {
@@ -194,16 +236,15 @@ function receiveInboundTick(state) {
         return;
     }
 
-    if (state.isProcessing || state.demoCompleted) {
+    if (state.turnState === 'PROCESSING' || state.demoCompleted) {
         return;
     }
 
-    if (state.inboundAudioData.length < MIN_INBOUND_CHUNKS) {
+    if (state.turnState === 'SPEAKING') {
         return;
     }
 
-    if (state.playingFile || state.outboundAudioData.length >= state.outboundSize) {
-        logger.log(`[${state.uuid || 'demo-session'}] skipping inbound batch while outbound playback is active queue=${state.outboundAudioData.length}`);
+    if (state.currentUtteranceChunks.length === 0) {
         return;
     }
 
@@ -212,48 +253,45 @@ function receiveInboundTick(state) {
         return;
     }
 
-    const scriptedTranscript = DEMO_CALLER_UTTERANCES[state.demoTurnIndex];
+    const utteranceMs = getUtteranceDurationMs(state);
+    const silenceMs = Date.now() - state.lastInboundAt;
 
-    if (!scriptedTranscript) {
-        state.demoCompleted = true;
-        logger.log(`[${state.uuid || 'demo-session'}] demo script completed, no further mock STT turns will be sent`);
+    if (utteranceMs >= UTTERANCE_MAX_MS) {
+        void finalizeCurrentUtterance(state, 'max_duration');
         return;
     }
 
-    state.isProcessing = true;
+    if (silenceMs < END_OF_SPEECH_MS) {
+        return;
+    }
 
-    (async () => {
-        const inboundBatch = state.inboundAudioData.splice(0, state.inboundAudioData.length);
-        logger.log(`[${state.uuid || 'demo-session'}] inbound batch captured: ${inboundBatch.length} chunks`);
+    if (utteranceMs < MIN_UTTERANCE_MS) {
+        logger.log(`[stt] dropped short utterance uuid=${state.uuid || 'pending'} utteranceMs=${utteranceMs}`);
+        clearCurrentUtterance(state);
+        return;
+    }
 
-        try {
-            const transcript = scriptedTranscript;
-            logger.log(`[${state.uuid || 'demo-session'}] mock STT transcript: ${transcript}`);
+    void finalizeCurrentUtterance(state, 'end_of_speech');
+}
 
-            const botResponse = await callBotEngine(transcript, state.uuid || 'demo-session', state.callerNumber || 'unknown');
-            const replyText = botResponse?.data?.reply || 'I am sorry, I could not process your request right now.';
-            logger.log(`[${state.uuid || 'demo-session'}] bot reply: ${replyText}`);
+function hasSpeechEnergy(chunk) {
+    if (!Buffer.isBuffer(chunk) || chunk.length < 2) {
+        return false;
+    }
 
-            const audioBuffer = await mockTTS(replyText);
-            logger.log(`[${state.uuid || 'demo-session'}] mock TTS buffer generated: ${audioBuffer.length} bytes`);
+    let sumAbs = 0;
+    let samples = 0;
 
-            enqueueOutbound(state, audioBuffer);
-            state.processedUtterances += 1;
-            state.demoTurnIndex += 1;
-            state.lastProcessedAt = Date.now();
+    for (let offset = 0; offset + 1 < chunk.length; offset += 2) {
+        sumAbs += Math.abs(chunk.readInt16LE(offset));
+        samples += 1;
+    }
 
-            if (botResponse?.data?.stage === 'booked' || botResponse?.data?.stage === 'cancelled') {
-                state.demoCompleted = true;
-            }
+    if (samples === 0) {
+        return false;
+    }
 
-            logger.log(`[${state.uuid || 'demo-session'}] outbound audio enqueued, processedUtterances=${state.processedUtterances}`);
-        } catch (error) {
-            logger.error(`[${state.uuid || 'demo-session'}] receiveInboundTick failed`, error);
-        } finally {
-            state.isProcessing = false;
-            logger.log(`[${state.uuid || 'demo-session'}] processing complete`);
-        }
-    })();
+    return (sumAbs / samples) >= SPEECH_CHUNK_AVG_ABS_THRESHOLD;
 }
 
 async function callBotEngine(transcript, sessionId, callerNumber) {
@@ -293,6 +331,29 @@ async function mockTTS(text) {
     return buffer;
 }
 
+async function generateReplyTtsAudio(state, replyText) {
+    const safeReplyText = String(replyText || '').trim() || 'No reply generated';
+
+    logger.log('[reply-tts] request start', {
+        uuid: state.uuid || 'pending',
+        textLength: safeReplyText.length
+    });
+
+    try {
+        const audioBuffer = await greetingService.generateGreetingAudio({
+            ...greetingConfig,
+            greetingText: safeReplyText,
+            greetingTtsProvider: 'sarvam'
+        });
+
+        logger.log(`[reply-tts] success bytes=${audioBuffer.length}`);
+        return audioBuffer;
+    } catch (error) {
+        logger.error(`[reply-tts] fallback to mockTTS reason=${error.message}`);
+        return mockTTS(safeReplyText);
+    }
+}
+
 async function playConfiguredGreeting(state) {
     if (state.welcomePlayed) {
         return;
@@ -308,6 +369,8 @@ async function playConfiguredGreeting(state) {
     });
 
     if (greetingConfig.enableDynamicGreeting) {
+        setTurnState(state, 'SPEAKING', 'greeting-dynamic');
+        state.speakingSource = 'greeting';
         state.playingFile = true;
 
         try {
@@ -330,10 +393,13 @@ async function playConfiguredGreeting(state) {
     }
 
     if (PLAY_WELCOME_FILE) {
+        setTurnState(state, 'SPEAKING', 'greeting-static');
+        state.speakingSource = 'greeting';
         await playFile(state, WELCOME_FILE);
         return;
     }
 
+    setTurnState(state, 'LISTENING', 'greeting-skipped');
     logger.log('[greeting] greeting playback skipped', {
         uuid: state.uuid || 'pending',
         reason: greetingConfig.enableDynamicGreeting ? 'dynamic_failed_and_static_disabled' : 'static_disabled'
@@ -357,14 +423,31 @@ function sendOutboundTick(state) {
     if (state.paused || state.ws.readyState !== WebSocket.OPEN) return;
     if (state.outboundAudioData.length === 0) return;
 
-    if (state.outboundAudioData.length >= state.outboundSize) {
-        const batch = state.outboundAudioData.splice(0, state.outboundSize);
-        const frame = Buffer.concat(batch);
+    const availableFrames = Math.min(state.outboundAudioData.length, state.outboundSize);
+    const batch = state.outboundAudioData.splice(0, availableFrames);
 
-        state.SEND_CHUNK++;
-        state.wsSendTs = Date.now();
-        logger.log(`sendOutboundTick sending uuid=${state.uuid || 'pending'} sendChunk=${state.SEND_CHUNK} recvChunk=${state.RECV_CHUNK} frames=${batch.length} bytes=${frame.length} expectedBytesPerTick=${MAX_CHUNK_SIZE * state.outboundSize}`);
-        state.ws.send(frame, { binary: true });
+    while (batch.length < state.outboundSize) {
+        batch.push(Buffer.alloc(MAX_CHUNK_SIZE));
+    }
+
+    const frame = Buffer.concat(batch);
+
+    state.SEND_CHUNK++;
+    state.wsSendTs = Date.now();
+    logger.log(`sendOutboundTick sending uuid=${state.uuid || 'pending'} sendChunk=${state.SEND_CHUNK} recvChunk=${state.RECV_CHUNK} frames=${availableFrames} bytes=${frame.length} expectedBytesPerTick=${MAX_CHUNK_SIZE * state.outboundSize}`);
+    state.ws.send(frame, { binary: true });
+
+    if (state.turnState === 'SPEAKING' && state.outboundAudioData.length === 0) {
+        const finishReason = state.speakingSource === 'greeting' ? 'greeting-finished' : 'reply-finished';
+        setTurnState(state, 'LISTENING', finishReason);
+        clearCurrentUtterance(state);
+        state.speakingSource = '';
+
+        if (state.demoCompleted && !state.hangupSent && state.ws.readyState === WebSocket.OPEN) {
+            state.hangupSent = true;
+            logger.log(`[${state.uuid || 'pending'}] sending hangup after final reply`);
+            state.ws.send(JSON.stringify({ type: 'hangup', uuid: state.uuid || 'pending' }));
+        }
     }
 }
 
@@ -420,6 +503,146 @@ async function playFile(state, filepath) {
     state.playingFile = false;
 }
 
+async function finalizeCurrentUtterance(state, reason) {
+    if (state.turnState !== 'LISTENING' || state.currentUtteranceChunks.length === 0) {
+        return;
+    }
+
+    const inboundBatch = state.currentUtteranceChunks.splice(0, state.currentUtteranceChunks.length);
+    const scriptedTranscript = DEMO_CALLER_UTTERANCES[state.demoTurnIndex] || '';
+    const utteranceMs = getUtteranceDurationMsFromChunks(inboundBatch);
+
+    clearCurrentUtterance(state);
+    state.isProcessing = true;
+    setTurnState(state, 'PROCESSING', reason);
+
+    logger.log(`[${state.uuid || 'demo-session'}] inbound batch captured: ${inboundBatch.length} chunks`);
+    logger.log(`[turn] utterance captured uuid=${state.uuid || 'pending'} ms=${utteranceMs}`);
+
+    try {
+        if (greetingConfig.sttProvider === 'mock' && !scriptedTranscript) {
+            state.demoCompleted = true;
+            logger.log(`[${state.uuid || 'demo-session'}] demo script completed, no further mock STT turns will be sent`);
+            setTurnState(state, 'LISTENING', 'demo-script-complete');
+            return;
+        }
+
+        const rawTranscript = await sttService.transcribeInboundAudio({
+            uuid: state.uuid || 'pending',
+            audioChunks: inboundBatch,
+            fallbackTranscript: scriptedTranscript,
+            utteranceMs,
+            config: greetingConfig
+        });
+
+        const transcript = selectTranscript(rawTranscript, scriptedTranscript, state);
+        logger.log(`[stt][final] uuid=${state.uuid || 'pending'} transcript="${transcript}"`);
+        logger.log(`[stt] transcript=${transcript}`);
+
+        const botResponse = await callBotEngine(transcript, state.uuid || 'demo-session', state.callerNumber || 'unknown');
+        const replyText = botResponse?.data?.reply || 'I am sorry, I could not process your request right now.';
+        logger.log(`[${state.uuid || 'demo-session'}] bot reply: ${replyText}`);
+
+        const audioBuffer = await generateReplyTtsAudio(state, replyText);
+        logger.log(`[${state.uuid || 'demo-session'}] reply TTS buffer generated: ${audioBuffer.length} bytes`);
+
+        setTurnState(state, 'SPEAKING', 'reply-tts');
+        state.speakingSource = 'reply';
+        enqueueOutbound(state, audioBuffer);
+        state.processedUtterances += 1;
+        state.demoTurnIndex += 1;
+        state.lastProcessedAt = Date.now();
+
+        if (botResponse?.data?.stage === 'booked' || botResponse?.data?.stage === 'cancelled') {
+            state.demoCompleted = true;
+        }
+
+        logger.log(`[${state.uuid || 'demo-session'}] outbound audio enqueued, processedUtterances=${state.processedUtterances}`);
+    } catch (error) {
+        logger.error(`[${state.uuid || 'demo-session'}] receiveInboundTick failed`, error);
+        setTurnState(state, 'LISTENING', 'processing-error');
+    } finally {
+        state.isProcessing = false;
+        logger.log(`[${state.uuid || 'demo-session'}] processing complete`);
+    }
+}
+
+function getUtteranceDurationMs(state) {
+    return getUtteranceDurationMsFromChunks(state.currentUtteranceChunks);
+}
+
+function getUtteranceDurationMsFromChunks(chunks) {
+    const totalBytes = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    return Math.round((totalBytes / 16000) * 1000);
+}
+
+function clearCurrentUtterance(state) {
+    state.currentUtteranceChunks.length = 0;
+    state.speechStartedAt = 0;
+    state.lastInboundAt = 0;
+}
+
+function setTurnState(state, nextState, reason) {
+    const previousState = state.turnState;
+
+    if (previousState === nextState) {
+        return;
+    }
+
+    logger.log(`[turn] uuid=${state.uuid || 'pending'} ${previousState} -> ${nextState} reason=${reason}`);
+    state.turnState = nextState;
+
+    if (previousState === 'SPEAKING' && state.droppedInboundChunks > 0) {
+        logger.log(`[inbound] dropped chunk count during SPEAKING uuid=${state.uuid || 'pending'} count=${state.droppedInboundChunks}`);
+        state.droppedInboundChunks = 0;
+    }
+}
+
+function selectTranscript(rawTranscript, fallbackTranscript, state) {
+    const normalizedTranscript = normalizeTranscript(rawTranscript);
+
+    if (isUsableTranscript(normalizedTranscript)) {
+        return normalizedTranscript;
+    }
+
+    const safeFallback = normalizeTranscript(fallbackTranscript);
+
+    if (safeFallback) {
+        logger.error(`[stt] fallback triggered provider=${greetingConfig.sttProvider} reason=unusable_transcript uuid=${state.uuid || 'pending'}`);
+        return safeFallback;
+    }
+
+    return normalizedTranscript;
+}
+
+function normalizeTranscript(text) {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function isUsableTranscript(text) {
+    const normalized = normalizeTranscript(text);
+
+    if (!normalized) {
+        return false;
+    }
+
+    if (normalized.length < 3) {
+        return false;
+    }
+
+    const words = normalized.toLowerCase().split(' ').filter(Boolean);
+
+    if (words.length >= 3 && new Set(words).size === 1) {
+        return false;
+    }
+
+    if (words.length === 1 && /^(.)\1{2,}$/.test(words[0])) {
+        return false;
+    }
+
+    return true;
+}
+
 
 /* =====================
    _CLEANUP
@@ -440,6 +663,8 @@ function _cleanup(state, reason) {
     state.firstAudioSeen = false;
     state.inboundAudioData.length = 0;
     state.outboundAudioData.length = 0;
+    clearCurrentUtterance(state);
+    state.speakingSource = '';
 }
 
 function setupProcessSignalsWS(wss, activeSessions) {

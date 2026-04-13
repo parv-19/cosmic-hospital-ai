@@ -172,5 +172,85 @@ function clampInt16(value) {
 }
 
 module.exports = {
-    normalizeTelephonyPcm
+    normalizeTelephonyPcm,
+    createSttWavBuffer
 };
+
+function createSttWavBuffer(audioBuffer, options = {}) {
+    if (!Buffer.isBuffer(audioBuffer) || audioBuffer.length === 0) {
+        throw new Error('STT audio buffer is empty');
+    }
+
+    if (audioBuffer.length % 2 !== 0) {
+        throw new Error('STT PCM payload length must be even for 16-bit samples');
+    }
+
+    const sourceSampleRate = options.sourceSampleRate || 8000;
+    const targetSampleRate = options.targetSampleRate || 16000;
+    const monoSamples = bufferToInt16Array(audioBuffer);
+    const targetSamples = sourceSampleRate === targetSampleRate
+        ? monoSamples
+        : resampleInt16Mono(monoSamples, sourceSampleRate, targetSampleRate);
+
+    return createWaveFromInt16Samples(targetSamples, targetSampleRate);
+}
+
+function bufferToInt16Array(buffer) {
+    const sampleCount = buffer.length / 2;
+    const samples = new Int16Array(sampleCount);
+
+    for (let index = 0; index < sampleCount; index++) {
+        samples[index] = buffer.readInt16LE(index * 2);
+    }
+
+    return samples;
+}
+
+function resampleInt16Mono(samples, sourceSampleRate, targetSampleRate) {
+    if (samples.length === 0) {
+        return new Int16Array(0);
+    }
+
+    const targetLength = Math.max(1, Math.round(samples.length * targetSampleRate / sourceSampleRate));
+    const resampled = new Int16Array(targetLength);
+    const maxSourceIndex = samples.length - 1;
+
+    for (let targetIndex = 0; targetIndex < targetLength; targetIndex++) {
+        const sourcePosition = targetIndex * sourceSampleRate / targetSampleRate;
+        const lowerIndex = Math.min(maxSourceIndex, Math.floor(sourcePosition));
+        const upperIndex = Math.min(maxSourceIndex, lowerIndex + 1);
+        const fraction = sourcePosition - lowerIndex;
+        const lowerSample = samples[lowerIndex];
+        const upperSample = samples[upperIndex];
+        const interpolated = lowerSample + ((upperSample - lowerSample) * fraction);
+
+        resampled[targetIndex] = clampInt16(Math.round(interpolated));
+    }
+
+    return resampled;
+}
+
+function createWaveFromInt16Samples(samples, sampleRate) {
+    const dataSize = samples.length * 2;
+    const buffer = Buffer.alloc(44 + dataSize);
+
+    buffer.write('RIFF', 0, 'ascii');
+    buffer.writeUInt32LE(36 + dataSize, 4);
+    buffer.write('WAVE', 8, 'ascii');
+    buffer.write('fmt ', 12, 'ascii');
+    buffer.writeUInt32LE(16, 16);
+    buffer.writeUInt16LE(1, 20);
+    buffer.writeUInt16LE(1, 22);
+    buffer.writeUInt32LE(sampleRate, 24);
+    buffer.writeUInt32LE(sampleRate * 2, 28);
+    buffer.writeUInt16LE(2, 32);
+    buffer.writeUInt16LE(16, 34);
+    buffer.write('data', 36, 'ascii');
+    buffer.writeUInt32LE(dataSize, 40);
+
+    for (let index = 0; index < samples.length; index++) {
+        buffer.writeInt16LE(samples[index], 44 + (index * 2));
+    }
+
+    return buffer;
+}

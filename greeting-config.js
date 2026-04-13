@@ -88,7 +88,17 @@ const greetingConfig = {
     sarvamTtsModel: readString('SARVAM_TTS_MODEL', 'bulbul:v3'),
     sarvamTtsSpeaker: readString('SARVAM_TTS_SPEAKER', 'shubh').toLowerCase(),
     sarvamTtsLanguage: readString('SARVAM_TTS_LANGUAGE', 'en-IN'),
-    sarvamTtsSampleRate: readNumber('SARVAM_TTS_SAMPLE_RATE', 8000)
+    sarvamTtsSampleRate: readNumber('SARVAM_TTS_SAMPLE_RATE', 8000),
+    sttProvider: readString('STT_PROVIDER', 'mock').toLowerCase(),
+    sarvamSttModel: readString('SARVAM_STT_MODEL', 'saaras:v3'),
+    sarvamSttMode: readString('SARVAM_STT_MODE', 'transcribe').toLowerCase(),
+    sarvamSttLanguage: readString('SARVAM_STT_LANGUAGE', 'unknown'),
+    sarvamSttSampleRate: readNumber('SARVAM_STT_SAMPLE_RATE', 16000),
+    endOfSpeechMs: readNumber('END_OF_SPEECH_MS', 700),
+    minUtteranceMs: readNumber('MIN_UTTERANCE_MS', 500),
+    utteranceMaxMs: readNumber('UTTERANCE_MAX_MS', 5000),
+    sttDebugSaveWav: readBoolean('STT_DEBUG_SAVE_WAV', false),
+    sttDebugDir: readString('STT_DEBUG_DIR', './debug-stt')
 };
 
 module.exports = {
