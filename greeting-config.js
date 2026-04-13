@@ -63,12 +63,32 @@ function readString(name, fallback) {
     return raw == null || raw === '' ? fallback : raw;
 }
 
+function readNumber(name, fallback) {
+    const raw = process.env[name];
+
+    if (raw == null || raw === '') {
+        return fallback;
+    }
+
+    const parsed = Number(raw);
+
+    if (Number.isNaN(parsed)) {
+        return fallback;
+    }
+
+    return parsed;
+}
+
 const greetingConfig = {
     playWelcomeFile: readBoolean('PLAY_WELCOME_FILE', true),
     enableDynamicGreeting: readBoolean('ENABLE_DYNAMIC_GREETING', false),
     greetingText: readString('GREETING_TEXT', 'Welcome to Sunrise Care Clinic. How may I help you today?'),
     greetingTtsProvider: readString('GREETING_TTS_PROVIDER', 'mock').toLowerCase(),
-    sarvamApiKey: readString('SARVAM_API_KEY', '')
+    sarvamApiKey: readString('SARVAM_API_KEY', ''),
+    sarvamTtsModel: readString('SARVAM_TTS_MODEL', 'bulbul:v3'),
+    sarvamTtsSpeaker: readString('SARVAM_TTS_SPEAKER', 'shubh').toLowerCase(),
+    sarvamTtsLanguage: readString('SARVAM_TTS_LANGUAGE', 'en-IN'),
+    sarvamTtsSampleRate: readNumber('SARVAM_TTS_SAMPLE_RATE', 8000)
 };
 
 module.exports = {

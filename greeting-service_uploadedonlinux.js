@@ -34,7 +34,7 @@ function createGreetingService(options = {}) {
                     throw new Error('SARVAM_API_KEY is missing');
                 }
 
-                return generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger);
+                return synthesizeSarvamGreeting(fetchImpl, timeoutMs, config, text, logger);
             }
 
             throw new Error(`Unsupported greeting TTS provider: ${provider}`);
@@ -54,7 +54,7 @@ function synthesizeMockGreeting(text, maxChunkSize) {
     return buffer;
 }
 
-async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger) {
+async function synthesizeSarvamGreeting(fetchImpl, timeoutMs, config, text, logger) {
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => controller.abort(new Error('Sarvam TTS request timed out')), timeoutMs);
 
