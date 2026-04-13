@@ -3,6 +3,8 @@
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
+const { greetingConfig } = require('./greeting-config');
+const { createGreetingService } = require('./greeting-service');
 const logger = console;
 
 const activeSessions = new Set();
@@ -16,7 +18,7 @@ const MAX_CHUNK_SIZE = 320;      // 20ms @ 8kHz PCM
 const INTERVAL_MS = 100;
 const MIN_INBOUND_CHUNKS = 20;
 const BOT_ENGINE_URL = 'http://localhost:4004/process-call';
-const PLAY_WELCOME_FILE = (process.env.PLAY_WELCOME_FILE ?? 'true').toLowerCase() === 'true';
+const PLAY_WELCOME_FILE = greetingConfig.playWelcomeFile;
 const DEMO_CALLER_UTTERANCES = [
     'appointment book karna hai',
     'cardiologist',
@@ -30,6 +32,10 @@ const DEMO_CALLER_UTTERANCES = [
 ];
 
 const WELCOME_FILE = path.join(__dirname, 'welcome.sln');
+const greetingService = createGreetingService({
+    logger,
+    maxChunkSize: MAX_CHUNK_SIZE
+});
 
 /* =====================
    WS SERVER
@@ -42,6 +48,8 @@ const wss = new WebSocket.Server({
 
 logger.log(`WS Audio Server listening on ${PORT}`);
 logger.log(`PLAY_WELCOME_FILE=${PLAY_WELCOME_FILE}`);
+logger.log(`ENABLE_DYNAMIC_GREETING=${greetingConfig.enableDynamicGreeting}`);
+logger.log(`GREETING_TTS_PROVIDER=${greetingConfig.greetingTtsProvider}`);
 if (!fs.existsSync(WELCOME_FILE)) {
     logger.error(`WELCOME_FILE missing: ${WELCOME_FILE}`);
 } else {
@@ -161,13 +169,7 @@ function _onAudio(state, chunk) {
         logger.log(`Starting audio sender uuid=${state.uuid || 'pending'}`);
         startAudioSender(state);
 
-        // play welcome file once when enabled
-        if (PLAY_WELCOME_FILE) {
-            state.welcomePlayed = true;
-            playFile(state, WELCOME_FILE);
-        } else {
-            logger.log(`Skipping welcome playback uuid=${state.uuid || 'pending'} because PLAY_WELCOME_FILE=false`);
-        }
+        void playConfiguredGreeting(state);
     }
 
     state.RECV_CHUNK++;
@@ -289,6 +291,53 @@ async function mockTTS(text) {
     }
 
     return buffer;
+}
+
+async function playConfiguredGreeting(state) {
+    if (state.welcomePlayed) {
+        return;
+    }
+
+    state.welcomePlayed = true;
+
+    logger.log('[greeting] selecting greeting path', {
+        uuid: state.uuid || 'pending',
+        enableDynamicGreeting: greetingConfig.enableDynamicGreeting,
+        playWelcomeFile: PLAY_WELCOME_FILE,
+        provider: greetingConfig.greetingTtsProvider
+    });
+
+    if (greetingConfig.enableDynamicGreeting) {
+        state.playingFile = true;
+
+        try {
+            const audioBuffer = await greetingService.generateGreetingAudio(greetingConfig);
+            enqueueOutbound(state, audioBuffer);
+            logger.log('[greeting] dynamic greeting enqueued', {
+                uuid: state.uuid || 'pending',
+                bytes: audioBuffer.length,
+                provider: greetingConfig.greetingTtsProvider
+            });
+            return;
+        } catch (error) {
+            logger.error('[greeting] dynamic greeting failed, falling back to static welcome file', {
+                uuid: state.uuid || 'pending',
+                error: error.message
+            });
+        } finally {
+            state.playingFile = false;
+        }
+    }
+
+    if (PLAY_WELCOME_FILE) {
+        await playFile(state, WELCOME_FILE);
+        return;
+    }
+
+    logger.log('[greeting] greeting playback skipped', {
+        uuid: state.uuid || 'pending',
+        reason: greetingConfig.enableDynamicGreeting ? 'dynamic_failed_and_static_disabled' : 'static_disabled'
+    });
 }
 
 /* =====================
