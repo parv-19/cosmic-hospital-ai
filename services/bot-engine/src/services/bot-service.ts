@@ -1,4 +1,5 @@
 import { CallLogModel, DoctorModel } from "@ai-hospital/shared-db";
+import { llmFactory, type LLMConfig } from "./provider-factory";
 
 import { CallRepository, type BookingStage, type DemoSessionRecord, type TranscriptEntry } from "../repositories/call-repository";
 
@@ -16,6 +17,28 @@ type ClinicSettings = {
   bookingEnabled: boolean;
   greetingMessage?: string;
   supportedLanguage?: string;
+  conversationPrompts?: Partial<ConversationPrompts> | null;
+  llmProviders?: LLMConfig | null;
+  sttProviders?: unknown;
+  ttsProviders?: unknown;
+};
+
+type ConversationPrompts = {
+  askSpecialization: string;
+  askDoctorPreference: string;
+  askDate: string;
+  askTime: string;
+  askPatientName: string;
+  askMobile: string;
+  askPatientType: string;
+  confirmPrefix: string;
+  bookingConfirmed: string;
+  bookingCancelled: string;
+  bookingAlreadyComplete: string;
+  bookingAlreadyCancelled: string;
+  transferMessage: string;
+  goodbyeMessage: string;
+  extraInstructions: string;
 };
 
 type RuntimeDoctor = {
@@ -33,6 +56,10 @@ type RuntimeDoctor = {
     transferNumber?: string;
     bookingEnabled?: boolean;
     emergencyMessage?: string;
+    conversationPrompts?: Partial<ConversationPrompts> | null;
+    llmProviders?: LLMConfig | null;
+    sttProviders?: unknown;
+    ttsProviders?: unknown;
   } | null;
 };
 
@@ -67,9 +94,7 @@ const FALLBACK_DOCTORS: RuntimeDoctor[] = [
   { doctorId: "doctor-3", name: "Dr. Meera Shah", specialization: "Dermatology", fee: 900 }
 ];
 
-const PHRASES = {
-  greeting:
-    "Namaste, hospital appointment desk mein aapka swagat hai. Main aapki appointment booking mein madad kar sakti hoon. Please tell me the doctor name or specialization.",
+const DEFAULT_PROMPTS: ConversationPrompts = {
   askSpecialization:
     "Aap kis doctor ya specialization ke liye appointment lena chahte hain?",
   askDoctorPreference:
@@ -80,11 +105,21 @@ const PHRASES = {
   askMobile: "Kripya apna mobile number batayein.",
   askPatientType: "Kya yeh new patient hai ya follow-up?",
   confirmPrefix: "Main aapki details confirm karti hoon.",
+  bookingConfirmed: "Dhanyavaad. Aapki booking request dashboard par update kar di gayi hai.",
+  bookingCancelled:
+    "The booking request has been cancelled in demo mode. If you want, we can start again with a new appointment request.",
+  bookingAlreadyComplete: "Your appointment request is already confirmed in demo mode. Thank you for calling.",
+  bookingAlreadyCancelled: "This demo booking was cancelled. You can start again by saying appointment book karna hai.",
+  transferMessage: "I will transfer you to reception at the configured clinic number.",
+  goodbyeMessage: "Thank you for calling. Goodbye.",
+  extraInstructions: ""
+} as const;
+
+const FALLBACK_MESSAGES = {
+  greeting:
+    "Namaste, hospital appointment desk mein aapka swagat hai. Main aapki appointment booking mein madad kar sakti hoon. Please tell me the doctor name or specialization.",
   fallback:
     "Maaf kijiye, demo mode mein main filhaal selected appointment booking inputs hi samajh pa rahi hoon. Please continue with the appointment booking details.",
-  end: "Dhanyavaad. Aapki booking request dashboard par update kar di gayi hai.",
-  cancelled: "The booking request has been cancelled in demo mode. If you want, we can start again with a new appointment request.",
-  transfer: "I will transfer you to reception at the configured clinic number.",
   emergency: "If this is a medical emergency, please contact emergency support immediately."
 } as const;
 
@@ -147,6 +182,90 @@ function normalizeTranscript(transcript: string): string {
     .replace(/।/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function resolveConversationPrompts(
+  clinicSettings: ClinicSettings | null | undefined,
+  runtimeDoctors: RuntimeDoctor[],
+  session: DemoSessionRecord
+): ConversationPrompts {
+  const selectedDoctor = runtimeDoctors.find((doctor) => doctor.name === session.selectedDoctor || doctor.doctorId === session.selectedDoctor);
+  const selectedBySpecialization =
+    selectedDoctor
+    ?? runtimeDoctors.find((doctor) => doctor.specialization === session.selectedSpecialization)
+    ?? runtimeDoctors[0]
+    ?? null;
+
+  return {
+    ...DEFAULT_PROMPTS,
+    ...(clinicSettings?.conversationPrompts ?? {}),
+    ...(selectedBySpecialization?.botSettings?.conversationPrompts ?? {})
+  };
+}
+
+function withExtraInstructions(message: string, prompts: ConversationPrompts): string {
+  const extraInstructions = prompts.extraInstructions.trim();
+  return extraInstructions ? `${message} ${extraInstructions}` : message;
+}
+
+function canUseConfiguredLlmReply(action: string): boolean {
+  return new Set([
+    "demo_fallback",
+    "greet_and_prompt",
+    "reset_to_greeting",
+    "emergency_escalation",
+    "transfer_call",
+    "booking_already_complete",
+    "booking_cancelled"
+  ]).has(action);
+}
+
+function buildConfiguredSystemPrompt(
+  session: DemoSessionRecord,
+  prompts: ConversationPrompts,
+  runtimeDoctors: RuntimeDoctor[],
+  baseReply: string
+): string {
+  const doctorList = runtimeDoctors.map((doctor) => `${doctor.name} (${doctor.specialization})`).join(", ");
+
+  return [
+    "You are the configured hospital appointment assistant.",
+    "Reply with one concise spoken response only. Do not include JSON, labels, or analysis.",
+    "Do not invent booking details. Keep the existing booking stage and facts unchanged.",
+    `Current booking stage: ${session.bookingStage}.`,
+    `Selected doctor: ${session.selectedDoctor ?? "not selected"}.`,
+    `Selected specialization: ${session.selectedSpecialization ?? "not selected"}.`,
+    `Preferred date: ${session.preferredDate ?? "not selected"}.`,
+    `Preferred time: ${session.preferredTime ?? "not selected"}.`,
+    `Patient name: ${session.patientName ?? "not collected"}.`,
+    `Contact number: ${session.contactNumber ?? "not collected"}.`,
+    `Available doctors: ${doctorList || "none configured"}.`,
+    `Configured prompt instructions: ${prompts.extraInstructions || "none"}.`,
+    `Use this configured pipeline response as the source of truth: ${baseReply}`
+  ].join("\n");
+}
+
+async function applyConfiguredLlmReply(
+  transcript: string,
+  session: DemoSessionRecord,
+  clinicSettings: ClinicSettings | null | undefined,
+  prompts: ConversationPrompts,
+  runtimeDoctors: RuntimeDoctor[],
+  reply: string
+): Promise<string> {
+  const llmConfig = clinicSettings?.llmProviders;
+
+  if (!llmConfig || !llmConfig.primaryProvider || llmConfig.primaryProvider === "mock") {
+    return reply;
+  }
+
+  return llmFactory.generateReply(
+    transcript,
+    session,
+    llmConfig,
+    buildConfiguredSystemPrompt(session, prompts, runtimeDoctors, reply),
+    async () => reply
+  );
 }
 
 function matchIntentStart(normalizedTranscript: string): boolean {
@@ -411,7 +530,7 @@ function resolveMobile(transcript: string, callerNumber?: string | null, existin
     }
   }
 
-  return null;
+  return spokenDigits.length >= 8 && spokenDigits.length <= 10 ? spokenDigits : null;
 }
 
 function mapPatientType(normalizedTranscript: string): string | null {
@@ -573,16 +692,16 @@ function mapConfirmationFlexible(normalizedTranscript: string): "confirm" | "cha
   return null;
 }
 
-function buildConfirmationSummary(session: DemoSessionRecord): string {
-  return `${PHRASES.confirmPrefix} Doctor ${session.selectedDoctor ?? "assigned"} ke saath ${session.preferredDate ?? "selected date"} ko ${
+function buildConfirmationSummary(session: DemoSessionRecord, prompts: ConversationPrompts): string {
+  return `${prompts.confirmPrefix} Doctor ${session.selectedDoctor ?? "assigned"} ke saath ${session.preferredDate ?? "selected date"} ko ${
     session.preferredTime ?? "selected time"
   } ka slot hai. Name ${session.patientName ?? "patient"}, mobile ${session.contactNumber ?? "not provided"}, ${
     session.patientType ?? "consultation"
   }. Agar sab sahi hai to haan boliye.`;
 }
 
-function buildFinalSummary(session: DemoSessionRecord, appointmentId: string | null): string {
-  return `Aapki appointment ${session.selectedDoctor ?? "assigned doctor"} ke saath ${session.preferredDate ?? "selected date"} ko ${
+function buildFinalSummary(session: DemoSessionRecord, appointmentId: string | null, prompts: ConversationPrompts): string {
+  return `${prompts.bookingConfirmed} Aapki appointment ${session.selectedDoctor ?? "assigned doctor"} ke saath ${session.preferredDate ?? "selected date"} ko ${
     session.preferredTime ?? "selected time"
   } ke liye booked ho gayi hai. Patient name ${session.patientName ?? "patient"}, mobile ${session.contactNumber ?? "not provided"}, patient type ${
     session.patientType ?? "consultation"
@@ -677,18 +796,20 @@ export class BotService {
       transcriptHistory: [...session.transcriptHistory, createHistoryEntry("caller", input.transcript)]
     });
 
-    let reply = clinicSettings?.greetingMessage ?? PHRASES.fallback;
+    const prompts = resolveConversationPrompts(clinicSettings, runtimeDoctors, session);
+    let reply = clinicSettings?.greetingMessage ?? FALLBACK_MESSAGES.fallback;
     let stage: BookingStage = session.bookingStage;
     let action = "demo_fallback";
     let latestIntent = session.latestIntent ?? "demo_booking";
 
     if (normalizedTranscript.includes("emergency")) {
-      reply = clinicSettings?.emergencyMessage ?? PHRASES.emergency;
+      reply = clinicSettings?.emergencyMessage ?? FALLBACK_MESSAGES.emergency;
       action = "emergency_escalation";
       latestIntent = "emergency";
       stage = "fallback";
     } else if (normalizedTranscript.includes("human") || normalizedTranscript.includes("reception")) {
-      reply = `I will transfer you to reception at ${clinicSettings?.transferNumber ?? "the configured clinic number"}.`;
+      const transferPrefix = prompts.transferMessage.replace("the configured clinic number", "").trim();
+      reply = `${transferPrefix} ${clinicSettings?.transferNumber ?? "the configured clinic number"}.`.trim();
       action = "transfer_call";
       latestIntent = "human_escalation";
       stage = "fallback";
@@ -708,7 +829,7 @@ export class BotService {
                 selectedDoctor: directDoctor.selectedDoctor,
                 doctorPreference: directDoctor.doctorPreference
               });
-              reply = PHRASES.askDate;
+              reply = withExtraInstructions(prompts.askDate, prompts);
               stage = "waiting_for_date";
               action = "capture_doctor_preference";
               latestIntent = "book_appointment";
@@ -717,17 +838,17 @@ export class BotService {
                 selectedSpecialization: specialization.specialization,
                 selectedDoctor: specialization.doctors[0]
               });
-              reply = PHRASES.askDoctorPreference;
+              reply = withExtraInstructions(prompts.askDoctorPreference, prompts);
               stage = "waiting_for_doctor_preference";
               action = "capture_specialization";
               latestIntent = "book_appointment";
             } else if (matchIntentStart(normalizedTranscript)) {
-            reply = PHRASES.askSpecialization;
+            reply = withExtraInstructions(prompts.askSpecialization, prompts);
             stage = "waiting_for_specialization";
             action = "capture_booking_intent";
             latestIntent = "book_appointment";
           } else {
-            reply = clinicSettings?.greetingMessage ?? PHRASES.greeting;
+            reply = clinicSettings?.greetingMessage ?? FALLBACK_MESSAGES.greeting;
             stage = "waiting_for_intent";
             action = "greet_and_prompt";
           }
@@ -745,7 +866,7 @@ export class BotService {
               selectedDoctor: directDoctor.selectedDoctor,
               doctorPreference: directDoctor.doctorPreference
             });
-            reply = PHRASES.askDate;
+            reply = withExtraInstructions(prompts.askDate, prompts);
             stage = "waiting_for_date";
             action = "capture_doctor_preference";
           } else if (specialization) {
@@ -753,13 +874,13 @@ export class BotService {
               selectedSpecialization: specialization.specialization,
               selectedDoctor: specialization.doctors[0]
             });
-            reply = PHRASES.askDoctorPreference;
+            reply = withExtraInstructions(prompts.askDoctorPreference, prompts);
             stage = "waiting_for_doctor_preference";
             action = "capture_specialization";
           } else {
             reply = runtimeDoctors.length > 0
               ? `Available specializations include ${runtimeDoctors.map((doctor) => doctor.specialization).filter((value, index, array) => array.indexOf(value) === index).join(", ")}. Please choose one.`
-              : PHRASES.askSpecialization;
+              : withExtraInstructions(prompts.askSpecialization, prompts);
           }
           break;
         }
@@ -772,11 +893,11 @@ export class BotService {
               doctorPreference: preference.doctorPreference,
               selectedDoctor: preference.selectedDoctor
             });
-            reply = PHRASES.askDate;
+            reply = withExtraInstructions(prompts.askDate, prompts);
             stage = "waiting_for_date";
             action = "capture_doctor_preference";
           } else {
-            reply = PHRASES.askDoctorPreference;
+            reply = withExtraInstructions(prompts.askDoctorPreference, prompts);
             action = "reprompt_doctor_preference";
           }
           break;
@@ -787,11 +908,11 @@ export class BotService {
 
           if (date) {
             session = updateSession(session, { preferredDate: date });
-            reply = PHRASES.askTime;
+            reply = withExtraInstructions(prompts.askTime, prompts);
             stage = "waiting_for_time";
             action = "capture_date";
           } else {
-            reply = PHRASES.askDate;
+            reply = withExtraInstructions(prompts.askDate, prompts);
             action = "reprompt_date";
           }
           break;
@@ -802,11 +923,11 @@ export class BotService {
 
           if (time) {
             session = updateSession(session, { preferredTime: time });
-            reply = PHRASES.askPatientName;
+            reply = withExtraInstructions(prompts.askPatientName, prompts);
             stage = "waiting_for_patient_name";
             action = "capture_time";
           } else {
-            reply = PHRASES.askTime;
+            reply = withExtraInstructions(prompts.askTime, prompts);
             action = "reprompt_time";
           }
           break;
@@ -817,11 +938,11 @@ export class BotService {
 
           if (patientName) {
             session = updateSession(session, { patientName });
-            reply = PHRASES.askMobile;
+            reply = withExtraInstructions(prompts.askMobile, prompts);
             stage = "waiting_for_mobile";
             action = "capture_patient_name";
           } else {
-            reply = PHRASES.askPatientName;
+            reply = withExtraInstructions(prompts.askPatientName, prompts);
             action = "reprompt_patient_name";
           }
           break;
@@ -832,11 +953,11 @@ export class BotService {
 
           if (mobile) {
             session = updateSession(session, { contactNumber: mobile });
-            reply = PHRASES.askPatientType;
+            reply = withExtraInstructions(prompts.askPatientType, prompts);
             stage = "waiting_for_patient_type";
             action = "capture_mobile";
           } else {
-            reply = PHRASES.askMobile;
+            reply = withExtraInstructions(prompts.askMobile, prompts);
             action = "reprompt_mobile";
           }
           break;
@@ -847,11 +968,11 @@ export class BotService {
 
           if (patientType) {
             session = updateSession(session, { patientType });
-            reply = buildConfirmationSummary(session);
+            reply = buildConfirmationSummary(session, prompts);
             stage = "confirming";
             action = "capture_patient_type";
           } else {
-            reply = PHRASES.askPatientType;
+            reply = withExtraInstructions(prompts.askPatientType, prompts);
             action = "reprompt_patient_type";
           }
           break;
@@ -861,15 +982,15 @@ export class BotService {
           const confirmation = mapConfirmationFlexible(normalizedTranscript);
 
           if (confirmation === "change_doctor") {
-            reply = PHRASES.askDoctorPreference;
+            reply = withExtraInstructions(prompts.askDoctorPreference, prompts);
             stage = "waiting_for_doctor_preference";
             action = "change_doctor";
           } else if (confirmation === "change_time") {
-            reply = PHRASES.askTime;
+            reply = withExtraInstructions(prompts.askTime, prompts);
             stage = "waiting_for_time";
             action = "change_time";
           } else if (confirmation === "cancel") {
-            reply = PHRASES.cancelled;
+            reply = prompts.bookingCancelled;
             stage = "cancelled";
             action = "cancel_booking";
             session = updateSession(session, {
@@ -893,7 +1014,7 @@ export class BotService {
             });
 
             const appointmentId = appointmentResponse?.data.id ?? appointmentResponse?.data.appointmentId ?? null;
-            reply = buildFinalSummary(session, appointmentId);
+            reply = buildFinalSummary(session, appointmentId, prompts);
             stage = "booked";
             action = "confirm_booking";
             session = updateSession(session, {
@@ -901,27 +1022,38 @@ export class BotService {
               bookingResult: appointmentId ? `Booked successfully with reference ${appointmentId}` : "Booking requested in demo mode"
             });
           } else {
-            reply = buildConfirmationSummary(session);
+            reply = buildConfirmationSummary(session, prompts);
             action = "reprompt_confirmation";
           }
           break;
         }
 
         case "booked":
-          reply = "Your appointment request is already confirmed in demo mode. Thank you for calling.";
+          reply = prompts.bookingAlreadyComplete;
           action = "booking_already_complete";
           break;
 
         case "cancelled":
-          reply = "This demo booking was cancelled. You can start again by saying appointment book karna hai.";
+          reply = prompts.bookingAlreadyCancelled;
           action = "booking_cancelled";
           break;
 
         default:
-          reply = clinicSettings?.greetingMessage ?? PHRASES.greeting;
+          reply = clinicSettings?.greetingMessage ?? FALLBACK_MESSAGES.greeting;
           stage = "waiting_for_intent";
           action = "reset_to_greeting";
       }
+    }
+
+    if (canUseConfiguredLlmReply(action)) {
+      reply = await applyConfiguredLlmReply(
+        normalizedTranscript,
+        { ...session, bookingStage: stage, latestIntent },
+        clinicSettings,
+        prompts,
+        runtimeDoctors,
+        reply
+      );
     }
 
     session = updateSession(session, {
@@ -966,7 +1098,7 @@ export class BotService {
     let action = "clarify";
 
     if (intent === "emergency") {
-      reply = clinicSettings?.emergencyMessage ?? PHRASES.emergency;
+      reply = clinicSettings?.emergencyMessage ?? FALLBACK_MESSAGES.emergency;
       action = "emergency_escalation";
     } else if (intent === "human_escalation") {
       reply = `I will transfer you to reception at ${clinicSettings?.transferNumber ?? "the configured clinic number"}.`;
@@ -975,7 +1107,7 @@ export class BotService {
       reply = `The consultation fee is ${clinicSettings?.consultationFee ?? "configured in admin"} and clinic timings are ${clinicSettings?.clinicTimings ?? "available at the clinic desk"}.`;
       action = "share_clinic_info";
     } else if (intent === "book_appointment") {
-      reply = PHRASES.askSpecialization;
+      reply = DEFAULT_PROMPTS.askSpecialization;
       action = "create_appointment_request";
     }
 

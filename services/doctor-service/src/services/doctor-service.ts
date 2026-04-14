@@ -52,6 +52,26 @@ type SettingsInput = {
   transferNumber?: string;
   bookingEnabled?: boolean;
   emergencyMessage?: string;
+  conversationPrompts?: {
+    askSpecialization?: string;
+    askDoctorPreference?: string;
+    askDate?: string;
+    askTime?: string;
+    askPatientName?: string;
+    askMobile?: string;
+    askPatientType?: string;
+    confirmPrefix?: string;
+    bookingConfirmed?: string;
+    bookingCancelled?: string;
+    bookingAlreadyComplete?: string;
+    bookingAlreadyCancelled?: string;
+    transferMessage?: string;
+    goodbyeMessage?: string;
+    extraInstructions?: string;
+  };
+  llmProviders?: unknown;
+  sttProviders?: unknown;
+  ttsProviders?: unknown;
 };
 
 type FaqInput = {
@@ -224,7 +244,11 @@ export class DoctorService {
       transferNumber: settings?.transferNumber ?? "+91-99999-00000",
       emergencyMessage: settings?.emergencyMessage ?? "If this is a medical emergency, please contact emergency support immediately.",
       supportedLanguage: settings?.language ?? doctor?.language ?? "en",
-      bookingEnabled: settings?.bookingEnabled ?? true
+      bookingEnabled: settings?.bookingEnabled ?? true,
+      conversationPrompts: settings?.conversationPrompts ?? null,
+      llmProviders: settings?.llmProviders ?? null,
+      sttProviders: settings?.sttProviders ?? null,
+      ttsProviders: settings?.ttsProviders ?? null
     };
   }
 
@@ -250,7 +274,11 @@ export class DoctorService {
               supportedIntents: doctorMap.get(doctor.doctorId)?.supportedIntents,
               transferNumber: doctorMap.get(doctor.doctorId)?.transferNumber,
               bookingEnabled: doctorMap.get(doctor.doctorId)?.bookingEnabled,
-              emergencyMessage: doctorMap.get(doctor.doctorId)?.emergencyMessage
+              emergencyMessage: doctorMap.get(doctor.doctorId)?.emergencyMessage,
+              conversationPrompts: doctorMap.get(doctor.doctorId)?.conversationPrompts,
+              llmProviders: doctorMap.get(doctor.doctorId)?.llmProviders,
+              sttProviders: doctorMap.get(doctor.doctorId)?.sttProviders,
+              ttsProviders: doctorMap.get(doctor.doctorId)?.ttsProviders
             }
           : null
       })),
@@ -336,7 +364,24 @@ export class DoctorService {
       supportedIntents: ["book_appointment", "clinic_info", "human_escalation", "emergency"],
       transferNumber: input.contactNumber ?? "+91-99999-00000",
       bookingEnabled: true,
-      emergencyMessage: "If this is a medical emergency, please contact emergency support immediately."
+      emergencyMessage: "If this is a medical emergency, please contact emergency support immediately.",
+      conversationPrompts: {
+        askSpecialization: "Aap kis doctor ya specialization ke liye appointment lena chahte hain?",
+        askDoctorPreference: "Kya aap kisi specific doctor se milna chahte hain ya earliest available doctor chalega?",
+        askDate: "Aapko kis din appointment chahiye?",
+        askTime: "Aapko morning, afternoon, ya evening mein slot chahiye?",
+        askPatientName: "Kripya apna naam batayein.",
+        askMobile: "Kripya apna mobile number batayein.",
+        askPatientType: "Kya yeh new patient hai ya follow-up?",
+        confirmPrefix: "Main aapki details confirm karti hoon.",
+        bookingConfirmed: "Dhanyavaad. Aapki booking request dashboard par update kar di gayi hai.",
+        bookingCancelled: "The booking request has been cancelled in demo mode. If you want, we can start again with a new appointment request.",
+        bookingAlreadyComplete: "Your appointment request is already confirmed in demo mode. Thank you for calling.",
+        bookingAlreadyCancelled: "This demo booking was cancelled. You can start again by saying appointment book karna hai.",
+        transferMessage: "I will transfer you to reception at the configured clinic number.",
+        goodbyeMessage: "Thank you for calling. Goodbye.",
+        extraInstructions: ""
+      }
     });
 
     return toDoctorSummary(doctor.toObject());
@@ -457,6 +502,10 @@ export class DoctorService {
       transferNumber: setting.transferNumber,
       bookingEnabled: setting.bookingEnabled,
       emergencyMessage: setting.emergencyMessage,
+      conversationPrompts: setting.conversationPrompts ?? null,
+      llmProviders: setting.llmProviders ?? null,
+      sttProviders: setting.sttProviders ?? null,
+      ttsProviders: setting.ttsProviders ?? null,
       fee: doctorMap.get(setting.doctorId)?.fee ?? null,
       scheduleLabel: doctorMap.get(setting.doctorId)?.scheduleLabel ?? null,
       availability: doctorMap.get(setting.doctorId)?.availability ?? []
@@ -481,7 +530,11 @@ export class DoctorService {
           ...(input.supportedIntents ? { supportedIntents: input.supportedIntents } : {}),
           ...(input.transferNumber ? { transferNumber: input.transferNumber } : {}),
           ...(typeof input.bookingEnabled === "boolean" ? { bookingEnabled: input.bookingEnabled } : {}),
-          ...(input.emergencyMessage ? { emergencyMessage: input.emergencyMessage } : {})
+          ...(input.emergencyMessage ? { emergencyMessage: input.emergencyMessage } : {}),
+          ...(input.conversationPrompts ? { conversationPrompts: input.conversationPrompts } : {}),
+          ...(input.llmProviders ? { llmProviders: input.llmProviders } : {}),
+          ...(input.sttProviders ? { sttProviders: input.sttProviders } : {}),
+          ...(input.ttsProviders ? { ttsProviders: input.ttsProviders } : {})
         }
       },
       { new: true, upsert: true }

@@ -3,12 +3,13 @@
 const { normalizeTelephonyPcm } = require('./audio-format');
 
 const SARVAM_TTS_URL = 'https://api.sarvam.ai/text-to-speech';
+const OPENAI_TTS_URL = 'https://api.openai.com/v1/audio/speech';
 
 function createGreetingService(options = {}) {
     const logger = options.logger || console;
     const maxChunkSize = options.maxChunkSize || 320;
     const fetchImpl = options.fetchImpl || fetch;
-    const timeoutMs = options.timeoutMs || 10000;
+    const defaultTimeoutMs = options.timeoutMs || 10000;
 
     return {
         async generateGreetingAudio(config) {
@@ -18,28 +19,51 @@ function createGreetingService(options = {}) {
                 throw new Error('GREETING_TEXT is empty');
             }
 
-            const provider = String(config?.greetingTtsProvider || 'mock').toLowerCase();
+            const primaryProvider = config?.primaryProvider || 'mock';
+            const fallbackChain = Array.isArray(config?.fallbackChain) ? config.fallbackChain : [];
+            const chain = [primaryProvider, ...fallbackChain];
+            const timeoutMs = config?.timeoutMs || defaultTimeoutMs;
 
             logger.log('[greeting] generating dynamic greeting audio', {
-                provider,
+                chain,
                 textLength: text.length
             });
 
-            if (provider === 'mock') {
-                return synthesizeMockGreeting(text, maxChunkSize);
-            }
+            for (const provider of chain) {
+                const normProvider = String(provider).toLowerCase();
+                logger.log(`[greeting] attempting provider=${normProvider}`);
 
-            if (provider === 'sarvam') {
-                if (!config?.sarvamApiKey) {
-                    throw new Error('SARVAM_API_KEY is missing');
+                try {
+                    if (normProvider === 'mock') {
+                        return synthesizeMockGreeting(text, maxChunkSize);
+                    }
+
+                    if (normProvider === 'sarvam') {
+                        return await generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger);
+                    }
+                    
+                    if (normProvider === 'openai') {
+                        return await generateOpenAiGreeting(fetchImpl, timeoutMs, config, text, logger);
+                    }
+
+                    logger.warn(`[greeting] unsupported TTS provider: ${normProvider}`);
+                } catch (error) {
+                    logger.error(`[greeting] provider=${normProvider} failed. reason=${error.message}`);
+                    // Fall back
                 }
-
-                return generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger);
             }
 
-            throw new Error(`Unsupported greeting TTS provider: ${provider}`);
+            logger.error('[greeting] all TTS providers failed, returning mock audio');
+            return synthesizeMockGreeting(text, maxChunkSize);
         }
     };
+}
+
+function resolveApiKey(config) {
+    const ref = config?.apiKeyRef || 'SARVAM_API_KEY';
+    const key = process.env[ref] || ref;
+    if (!key) throw new Error(`API key ref ${ref} is not set`);
+    return key;
 }
 
 function synthesizeMockGreeting(text, maxChunkSize) {
@@ -54,7 +78,63 @@ function synthesizeMockGreeting(text, maxChunkSize) {
     return buffer;
 }
 
+async function generateOpenAiGreeting(fetchImpl, timeoutMs, config, text, logger) {
+    const apiKey = resolveApiKey(config);
+    const model = String(config?.model || 'tts-1');
+    const voice = String(config?.voice || 'alloy').toLowerCase();
+    
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(new Error('OpenAI TTS request timed out')), timeoutMs);
+
+    try {
+        logger.log('[greeting] OpenAI TTS request start', {
+            model,
+            voice,
+            textLength: text.length
+        });
+
+        const response = await fetchImpl(OPENAI_TTS_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model,
+                input: text,
+                voice,
+                response_format: 'wav' // Ensure wav for telephony processing
+            }),
+            signal: controller.signal
+        });
+
+        if (!response.ok) {
+            const errorBody = await safeReadText(response);
+            throw new Error(`OpenAI TTS returned ${response.status}${errorBody ? `: ${errorBody.slice(0, 200)}` : ''}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        
+        // Target Sample rate logic isn't as easily isolated as Sarvam's base64 audio response,
+        // but `normalizeTelephonyPcm` operates on a buffer. The gateway supports converting PCM chunks if needed.
+        // Assuming 8000Hz expected, but openai usually outputs higher. 
+        // We will just pass the buffer to normalizeTelephonyPcm (which looks for a wav header)
+        
+        const normalizedAudio = normalizeTelephonyPcm(buffer, {
+            expectedSampleRate: 8000 // assuming standard output telephony
+        });
+
+        logger.log(`[greeting] OpenAI TTS success bytes=${normalizedAudio.length}`);
+
+        return normalizedAudio;
+    } finally {
+        clearTimeout(timeoutHandle);
+    }
+}
+
 async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger) {
+    const apiKey = resolveApiKey(config);
     const resolvedConfig = resolveSarvamTtsConfig(config);
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => controller.abort(new Error('Sarvam TTS request timed out')), timeoutMs);
@@ -72,7 +152,7 @@ async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'api-subscription-key': config.sarvamApiKey
+                'api-subscription-key': apiKey
             },
             body: JSON.stringify({
                 text,
@@ -105,14 +185,6 @@ async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger
         logger.log(`[greeting] Sarvam TTS success bytes=${normalizedAudio.length}`);
 
         return normalizedAudio;
-    } catch (error) {
-        logger.error(`[greeting] Sarvam TTS failed: ${error.message}`);
-
-        if (error?.name === 'AbortError') {
-            throw new Error('Sarvam TTS request timed out');
-        }
-
-        throw error;
     } finally {
         clearTimeout(timeoutHandle);
     }
@@ -120,10 +192,10 @@ async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger
 
 function resolveSarvamTtsConfig(config) {
     return {
-        model: String(config?.sarvamTtsModel || 'bulbul:v3'),
-        speaker: String(config?.sarvamTtsSpeaker || 'shubh').toLowerCase(),
-        language: String(config?.sarvamTtsLanguage || 'en-IN'),
-        sampleRate: Number(config?.sarvamTtsSampleRate) || 8000
+        model: String(config?.model || 'bulbul:v3'),
+        speaker: String(config?.voice || 'shubh').toLowerCase(),
+        language: String(config?.language || 'en-IN'),
+        sampleRate: Number(config?.sampleRate) || 8000
     };
 }
 

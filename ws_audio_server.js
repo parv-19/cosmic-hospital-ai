@@ -134,7 +134,7 @@ wss.on('connection', ws => {
         if (isBinary) {
             _onAudio(state, data);
         } else {
-            _onControl(state, data.toString());
+            void _onControl(state, data.toString());
         }
     });
 
@@ -146,7 +146,7 @@ wss.on('connection', ws => {
    CONTROL PLANE
 ===================== */
 
-function _onControl(state, text) {
+async function _onControl(state, text) {
     logger.log(`Control message received uuid=${state.uuid || 'pending'} payload=${text}`);
     let msg;
     try { msg = JSON.parse(text); } catch { return; }
@@ -157,6 +157,19 @@ function _onControl(state, text) {
         state.callerNumber = msg.mobile || msg.caller || '';
         state.startedAt = Date.now();
         logger.info(`WS start uuid=${state.uuid}`);
+        
+        try {
+            const resp = await fetch('http://127.0.0.1:4001/clinic-settings');
+            if (resp.ok) {
+                const payload = await resp.json();
+                state.aiConfig = payload.data || {};
+            } else {
+                state.aiConfig = {};
+            }
+        } catch (e) {
+            logger.error(`Failed to fetch clinic-settings for ${state.uuid}: ${e.message}`);
+            state.aiConfig = {};
+        }
         break;
 
     case 'info':
@@ -342,8 +355,8 @@ async function generateReplyTtsAudio(state, replyText) {
     try {
         const audioBuffer = await greetingService.generateGreetingAudio({
             ...greetingConfig,
-            greetingText: safeReplyText,
-            greetingTtsProvider: 'sarvam'
+            ...(state.aiConfig?.ttsProviders || {}),
+            greetingText: safeReplyText
         });
 
         logger.log(`[reply-tts] success bytes=${audioBuffer.length}`);
@@ -374,7 +387,11 @@ async function playConfiguredGreeting(state) {
         state.playingFile = true;
 
         try {
-            const audioBuffer = await greetingService.generateGreetingAudio(greetingConfig);
+            const audioBuffer = await greetingService.generateGreetingAudio({
+                ...greetingConfig,
+                ...(state.aiConfig?.ttsProviders || {}),
+                greetingText: state.aiConfig?.greetingMessage || greetingConfig.greetingText
+            });
             enqueueOutbound(state, audioBuffer);
             logger.log('[greeting] dynamic greeting enqueued', {
                 uuid: state.uuid || 'pending',
@@ -520,7 +537,9 @@ async function finalizeCurrentUtterance(state, reason) {
     logger.log(`[turn] utterance captured uuid=${state.uuid || 'pending'} ms=${utteranceMs}`);
 
     try {
-        if (greetingConfig.sttProvider === 'mock' && !scriptedTranscript) {
+        const effectiveSttProvider = String(state.aiConfig?.sttProviders?.primaryProvider || greetingConfig.sttProvider).toLowerCase();
+
+        if (effectiveSttProvider === 'mock' && !scriptedTranscript) {
             state.demoCompleted = true;
             logger.log(`[${state.uuid || 'demo-session'}] demo script completed, no further mock STT turns will be sent`);
             setTurnState(state, 'LISTENING', 'demo-script-complete');
@@ -532,7 +551,7 @@ async function finalizeCurrentUtterance(state, reason) {
             audioChunks: inboundBatch,
             fallbackTranscript: scriptedTranscript,
             utteranceMs,
-            config: greetingConfig
+            config: state.aiConfig?.sttProviders || {}
         });
 
         const transcript = selectTranscript(rawTranscript, scriptedTranscript, state);
@@ -542,6 +561,7 @@ async function finalizeCurrentUtterance(state, reason) {
         const botResponse = await callBotEngine(transcript, state.uuid || 'demo-session', state.callerNumber || 'unknown');
         const replyText = botResponse?.data?.reply || 'I am sorry, I could not process your request right now.';
         logger.log(`[${state.uuid || 'demo-session'}] bot reply: ${replyText}`);
+        logger.log(`[${state.uuid || 'demo-session'}] bot state stage=${botResponse?.data?.stage || 'unknown'} action=${botResponse?.data?.action || 'unknown'} intent=${botResponse?.data?.intent || 'unknown'}`);
 
         const audioBuffer = await generateReplyTtsAudio(state, replyText);
         logger.log(`[${state.uuid || 'demo-session'}] reply TTS buffer generated: ${audioBuffer.length} bytes`);

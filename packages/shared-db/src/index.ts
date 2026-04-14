@@ -87,7 +87,57 @@ const doctorBotSettingsSchema = new Schema(
     supportedIntents: { type: [String], default: ["book_appointment", "clinic_info", "human_escalation", "emergency"] },
     transferNumber: { type: String, required: true },
     bookingEnabled: { type: Boolean, default: true },
-    emergencyMessage: { type: String, required: true }
+    emergencyMessage: { type: String, required: true },
+    conversationPrompts: {
+      askSpecialization: { type: String, default: "Aap kis doctor ya specialization ke liye appointment lena chahte hain?" },
+      askDoctorPreference: { type: String, default: "Kya aap kisi specific doctor se milna chahte hain ya earliest available doctor chalega?" },
+      askDate: { type: String, default: "Aapko kis din appointment chahiye?" },
+      askTime: { type: String, default: "Aapko morning, afternoon, ya evening mein slot chahiye?" },
+      askPatientName: { type: String, default: "Kripya apna naam batayein." },
+      askMobile: { type: String, default: "Kripya apna mobile number batayein." },
+      askPatientType: { type: String, default: "Kya yeh new patient hai ya follow-up?" },
+      confirmPrefix: { type: String, default: "Main aapki details confirm karti hoon." },
+      bookingConfirmed: { type: String, default: "Dhanyavaad. Aapki booking request dashboard par update kar di gayi hai." },
+      bookingCancelled: {
+        type: String,
+        default: "The booking request has been cancelled in demo mode. If you want, we can start again with a new appointment request."
+      },
+      bookingAlreadyComplete: {
+        type: String,
+        default: "Your appointment request is already confirmed in demo mode. Thank you for calling."
+      },
+      bookingAlreadyCancelled: {
+        type: String,
+        default: "This demo booking was cancelled. You can start again by saying appointment book karna hai."
+      },
+      transferMessage: { type: String, default: "I will transfer you to reception at the configured clinic number." },
+      goodbyeMessage: { type: String, default: "Thank you for calling. Goodbye." },
+      extraInstructions: { type: String, default: "" }
+    },
+    llmProviders: {
+      primaryProvider: { type: String, enum: ["mock", "openai", "claude", "sarvam"], default: "mock" },
+      fallbackChain: { type: [String], default: [] },
+      model: { type: String, default: "gpt-4o-mini" },
+      apiKeyRef: { type: String, default: "OPENAI_API_KEY" },
+      timeoutMs: { type: Number, default: 30000 },
+      stream: { type: Boolean, default: false }
+    },
+    sttProviders: {
+      primaryProvider: { type: String, enum: ["mock", "sarvam", "openai", "deepgram"], default: "sarvam" },
+      fallbackChain: { type: [String], default: ["mock"] },
+      model: { type: String, default: "saaras:v3" },
+      apiKeyRef: { type: String, default: "SARVAM_API_KEY" },
+      language: { type: String, default: "hi-IN" },
+      timeoutMs: { type: Number, default: 10000 }
+    },
+    ttsProviders: {
+      primaryProvider: { type: String, enum: ["mock", "sarvam", "openai", "elevenlabs"], default: "sarvam" },
+      fallbackChain: { type: [String], default: ["mock"] },
+      model: { type: String, default: "bulbul:v3" },
+      voice: { type: String, default: "shubh" },
+      apiKeyRef: { type: String, default: "SARVAM_API_KEY" },
+      timeoutMs: { type: Number, default: 10000 }
+    }
   },
   { timestamps: true }
 );
@@ -277,7 +327,48 @@ export async function ensurePlatformSeedData(): Promise<void> {
             supportedIntents: ["book_appointment", "clinic_info", "human_escalation", "emergency"],
             transferNumber: doctor.contactNumber,
             bookingEnabled: true,
-            emergencyMessage: "If this is a medical emergency, please contact emergency support immediately."
+            emergencyMessage: "If this is a medical emergency, please contact emergency support immediately.",
+            conversationPrompts: {
+              askSpecialization: "Aap kis doctor ya specialization ke liye appointment lena chahte hain?",
+              askDoctorPreference: "Kya aap kisi specific doctor se milna chahte hain ya earliest available doctor chalega?",
+              askDate: "Aapko kis din appointment chahiye?",
+              askTime: "Aapko morning, afternoon, ya evening mein slot chahiye?",
+              askPatientName: "Kripya apna naam batayein.",
+              askMobile: "Kripya apna mobile number batayein.",
+              askPatientType: "Kya yeh new patient hai ya follow-up?",
+              confirmPrefix: "Main aapki details confirm karti hoon.",
+              bookingConfirmed: "Dhanyavaad. Aapki booking request dashboard par update kar di gayi hai.",
+              bookingCancelled: "The booking request has been cancelled in demo mode. If you want, we can start again with a new appointment request.",
+              bookingAlreadyComplete: "Your appointment request is already confirmed in demo mode. Thank you for calling.",
+              bookingAlreadyCancelled: "This demo booking was cancelled. You can start again by saying appointment book karna hai.",
+              transferMessage: "I will transfer you to reception at the configured clinic number.",
+              goodbyeMessage: "Thank you for calling. Goodbye.",
+              extraInstructions: ""
+            },
+            llmProviders: {
+              primaryProvider: "mock",
+              fallbackChain: ["openai"],
+              model: "gpt-4o-mini",
+              apiKeyRef: "OPENAI_API_KEY",
+              timeoutMs: 30000,
+              stream: false
+            },
+            sttProviders: {
+              primaryProvider: "mock",
+              fallbackChain: [],
+              model: "saaras:v3",
+              apiKeyRef: "SARVAM_API_KEY",
+              language: "hi-IN",
+              timeoutMs: 10000
+            },
+            ttsProviders: {
+              primaryProvider: "mock",
+              fallbackChain: [],
+              model: "bulbul:v3",
+              voice: "shubh",
+              apiKeyRef: "SARVAM_API_KEY",
+              timeoutMs: 10000
+            }
           }
         },
         { upsert: true }

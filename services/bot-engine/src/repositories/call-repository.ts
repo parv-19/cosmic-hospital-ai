@@ -38,6 +38,7 @@ export type DemoSessionRecord = {
   botResponseHistory: TranscriptEntry[];
   createdAt: string;
   updatedAt: string;
+  frozenConfig?: any;
 };
 
 const sessions = new Map<string, DemoSessionRecord>();

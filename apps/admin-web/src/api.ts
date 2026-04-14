@@ -97,6 +97,47 @@ export type SettingsRecord = {
   transferNumber: string;
   bookingEnabled: boolean;
   emergencyMessage: string;
+  conversationPrompts: {
+    askSpecialization?: string;
+    askDoctorPreference?: string;
+    askDate?: string;
+    askTime?: string;
+    askPatientName?: string;
+    askMobile?: string;
+    askPatientType?: string;
+    confirmPrefix?: string;
+    bookingConfirmed?: string;
+    bookingCancelled?: string;
+    bookingAlreadyComplete?: string;
+    bookingAlreadyCancelled?: string;
+    transferMessage?: string;
+    goodbyeMessage?: string;
+    extraInstructions?: string;
+  } | null;
+  llmProviders?: {
+    primaryProvider: string;
+    fallbackChain: string[];
+    model: string;
+    apiKeyRef: string;
+    timeoutMs: number;
+    stream: boolean;
+  } | null;
+  sttProviders?: {
+    primaryProvider: string;
+    fallbackChain: string[];
+    model: string;
+    apiKeyRef: string;
+    language: string;
+    timeoutMs: number;
+  } | null;
+  ttsProviders?: {
+    primaryProvider: string;
+    fallbackChain: string[];
+    model: string;
+    voice: string;
+    apiKeyRef: string;
+    timeoutMs: number;
+  } | null;
   fee: number | null;
   scheduleLabel: string | null;
   availability: Array<{ day: string; start: string; end: string; blocked: boolean; leave: boolean }>;
