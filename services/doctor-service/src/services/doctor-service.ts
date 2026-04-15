@@ -52,6 +52,13 @@ type SettingsInput = {
   transferNumber?: string;
   bookingEnabled?: boolean;
   emergencyMessage?: string;
+  fallbackPolicy?: "ask_again" | "transfer" | "end_call" | "create_callback";
+  costDisplay?: {
+    showSttCost?: boolean;
+    showTtsCost?: boolean;
+    showLlmCost?: boolean;
+    showTotalCost?: boolean;
+  };
   conversationPrompts?: {
     askSpecialization?: string;
     askDoctorPreference?: string;
@@ -87,6 +94,14 @@ type FlowInput = {
   doctorId?: string | null;
   name: string;
   definition: unknown;
+};
+
+type ProviderHealthInput = {
+  service?: "llm" | "stt" | "tts";
+  primaryProvider?: string;
+  model?: string;
+  voice?: string;
+  apiKeyRef?: string;
 };
 
 type DoctorScopedUser = AuthUser & { doctorId?: string | null };
@@ -148,6 +163,8 @@ function toCallSummary(call: any) {
     bookingResult: call.bookingResult,
     currentNode: call.currentNode ?? call.bookingStage,
     outcome: call.outcome,
+    costSummary: call.costSummary ?? null,
+    usageLedger: call.usageLedger ?? [],
     transcriptHistory: call.transcriptHistory,
     startedAt: call.startedAt,
     updatedAt: call.updatedAt,
@@ -245,10 +262,75 @@ export class DoctorService {
       emergencyMessage: settings?.emergencyMessage ?? "If this is a medical emergency, please contact emergency support immediately.",
       supportedLanguage: settings?.language ?? doctor?.language ?? "en",
       bookingEnabled: settings?.bookingEnabled ?? true,
+      fallbackPolicy: settings?.fallbackPolicy ?? "ask_again",
+      costDisplay: settings?.costDisplay ?? null,
       conversationPrompts: settings?.conversationPrompts ?? null,
       llmProviders: settings?.llmProviders ?? null,
       sttProviders: settings?.sttProviders ?? null,
       ttsProviders: settings?.ttsProviders ?? null
+    };
+  }
+
+  checkProviderHealth(input: ProviderHealthInput) {
+    const provider = String(input.primaryProvider ?? "").toLowerCase();
+    const model = String(input.model ?? "").toLowerCase();
+    const apiKeyRef = String(input.apiKeyRef ?? "").trim();
+    const needsKey = provider !== "mock";
+    const keyAvailable = !needsKey || Boolean(apiKeyRef && process.env[apiKeyRef]);
+    const warnings: string[] = [];
+
+    const allowedModels: Record<string, Record<string, string[]>> = {
+      llm: {
+        mock: ["mock"],
+        openai: ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
+        claude: ["claude-3-5-haiku-latest", "claude-3-5-sonnet-latest"],
+        sarvam: ["sarvam-m"]
+      },
+      stt: {
+        mock: ["mock"],
+        sarvam: ["saaras:v2", "saaras:v3"],
+        openai: ["whisper-1", "gpt-4o-mini-transcribe"],
+        deepgram: ["nova-2", "nova-3"]
+      },
+      tts: {
+        mock: ["mock"],
+        sarvam: ["bulbul:v2", "bulbul:v3"],
+        openai: ["gpt-4o-mini-tts", "tts-1"],
+        elevenlabs: ["eleven_multilingual_v2"]
+      }
+    };
+
+    const service = input.service ?? "llm";
+    const validModels = allowedModels[service]?.[provider] ?? [];
+
+    if (!validModels.includes(model)) {
+      warnings.push(`${model || "selected model"} is not listed as compatible with ${provider || "selected provider"} for ${service}.`);
+    }
+
+    if (needsKey && !keyAvailable) {
+      warnings.push(`${apiKeyRef || "API key ref"} is not available in server environment.`);
+    }
+
+    const sarvamBulbulV3Voices = ["aditya", "ritu", "ashutosh", "priya", "neha", "rahul", "pooja", "rohan", "simran", "kavya", "amit", "dev"];
+    const sarvamBulbulV2Voices = ["anushka", "abhilash", "manisha", "vidya"];
+
+    if (service === "tts" && provider === "sarvam" && model === "bulbul:v3" && input.voice && !sarvamBulbulV3Voices.includes(String(input.voice).toLowerCase())) {
+      warnings.push(`${input.voice} is not in the configured Bulbul v3 voice list.`);
+    }
+
+    if (service === "tts" && provider === "sarvam" && model === "bulbul:v2" && input.voice && !sarvamBulbulV2Voices.includes(String(input.voice).toLowerCase())) {
+      warnings.push(`${input.voice} is not in the configured Bulbul v2 voice list.`);
+    }
+
+    return {
+      ok: warnings.length === 0,
+      provider,
+      service,
+      model,
+      keyRef: apiKeyRef,
+      keyAvailable,
+      warnings,
+      note: "Health check validates compatibility and server-side secret availability without making a paid provider request."
     };
   }
 
@@ -275,6 +357,8 @@ export class DoctorService {
               transferNumber: doctorMap.get(doctor.doctorId)?.transferNumber,
               bookingEnabled: doctorMap.get(doctor.doctorId)?.bookingEnabled,
               emergencyMessage: doctorMap.get(doctor.doctorId)?.emergencyMessage,
+              fallbackPolicy: doctorMap.get(doctor.doctorId)?.fallbackPolicy,
+              costDisplay: doctorMap.get(doctor.doctorId)?.costDisplay,
               conversationPrompts: doctorMap.get(doctor.doctorId)?.conversationPrompts,
               llmProviders: doctorMap.get(doctor.doctorId)?.llmProviders,
               sttProviders: doctorMap.get(doctor.doctorId)?.sttProviders,
@@ -330,7 +414,8 @@ export class DoctorService {
         transferred: calls.filter((call) => call.outcome === "transferred").length,
         failed: calls.filter((call) => call.outcome === "failed").length,
         activeCalls: calls.filter((call) => call.callStatus === "active").length,
-        appointments: appointments.length
+        appointments: appointments.length,
+        totalCost: Math.round(calls.reduce((sum, call) => sum + Number(call.costSummary?.totalCost ?? 0), 0) * 10000) / 10000
       },
       doctorStats
     };
@@ -365,6 +450,13 @@ export class DoctorService {
       transferNumber: input.contactNumber ?? "+91-99999-00000",
       bookingEnabled: true,
       emergencyMessage: "If this is a medical emergency, please contact emergency support immediately.",
+      fallbackPolicy: "ask_again",
+      costDisplay: {
+        showSttCost: true,
+        showTtsCost: true,
+        showLlmCost: true,
+        showTotalCost: true
+      },
       conversationPrompts: {
         askSpecialization: "Aap kis doctor ya specialization ke liye appointment lena chahte hain?",
         askDoctorPreference: "Kya aap kisi specific doctor se milna chahte hain ya earliest available doctor chalega?",
@@ -502,6 +594,8 @@ export class DoctorService {
       transferNumber: setting.transferNumber,
       bookingEnabled: setting.bookingEnabled,
       emergencyMessage: setting.emergencyMessage,
+      fallbackPolicy: setting.fallbackPolicy ?? "ask_again",
+      costDisplay: setting.costDisplay ?? null,
       conversationPrompts: setting.conversationPrompts ?? null,
       llmProviders: setting.llmProviders ?? null,
       sttProviders: setting.sttProviders ?? null,
@@ -531,6 +625,8 @@ export class DoctorService {
           ...(input.transferNumber ? { transferNumber: input.transferNumber } : {}),
           ...(typeof input.bookingEnabled === "boolean" ? { bookingEnabled: input.bookingEnabled } : {}),
           ...(input.emergencyMessage ? { emergencyMessage: input.emergencyMessage } : {}),
+          ...(input.fallbackPolicy ? { fallbackPolicy: input.fallbackPolicy } : {}),
+          ...(input.costDisplay ? { costDisplay: input.costDisplay } : {}),
           ...(input.conversationPrompts ? { conversationPrompts: input.conversationPrompts } : {}),
           ...(input.llmProviders ? { llmProviders: input.llmProviders } : {}),
           ...(input.sttProviders ? { sttProviders: input.sttProviders } : {}),

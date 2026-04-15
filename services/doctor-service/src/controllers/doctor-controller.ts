@@ -64,6 +64,10 @@ export class DoctorController {
     sendSuccess(res, await this.doctorService.getRuntimeConfig());
   };
 
+  checkProviderHealth = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    sendSuccess(res, this.doctorService.checkProviderHealth(req.body));
+  };
+
   getDashboard = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     sendSuccess(res, await this.doctorService.getDashboard(req.auth!));
   };

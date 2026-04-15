@@ -1,5 +1,6 @@
 import { CallLogModel, DoctorModel } from "@ai-hospital/shared-db";
 import { llmFactory, type LLMConfig } from "./provider-factory";
+import { createUsageLedgerEntry, summarizeUsageLedger, type UsageEventInput, type UsageLedgerEntry } from "./costing";
 
 import { CallRepository, type BookingStage, type DemoSessionRecord, type TranscriptEntry } from "../repositories/call-repository";
 
@@ -15,6 +16,7 @@ type ClinicSettings = {
   transferNumber: string;
   emergencyMessage: string;
   bookingEnabled: boolean;
+  fallbackPolicy?: "ask_again" | "transfer" | "end_call" | "create_callback";
   greetingMessage?: string;
   supportedLanguage?: string;
   conversationPrompts?: Partial<ConversationPrompts> | null;
@@ -55,6 +57,7 @@ type RuntimeDoctor = {
     supportedIntents?: string[];
     transferNumber?: string;
     bookingEnabled?: boolean;
+    fallbackPolicy?: "ask_again" | "transfer" | "end_call" | "create_callback";
     emergencyMessage?: string;
     conversationPrompts?: Partial<ConversationPrompts> | null;
     llmProviders?: LLMConfig | null;
@@ -74,6 +77,7 @@ type ProcessCallInput = {
   aiServiceUrl: string;
   doctorServiceUrl: string;
   appointmentServiceUrl: string;
+  usageEvents?: UsageEventInput[];
 };
 
 type ProcessCallOutput = {
@@ -167,8 +171,10 @@ function createNewSession(sessionId: string, callerNumber?: string): DemoSession
     contactNumber: callerNumber ?? null,
     bookingResult: null,
     latestIntent: null,
+    fallbackAttempts: 0,
     transcriptHistory: [],
     botResponseHistory: [],
+    usageLedger: [],
     createdAt,
     updatedAt: createdAt
   };
@@ -218,6 +224,10 @@ function canUseConfiguredLlmReply(action: string): boolean {
     "booking_already_complete",
     "booking_cancelled"
   ]).has(action);
+}
+
+function isFallbackAction(action: string): boolean {
+  return action === "greet_and_prompt" || action === "reset_to_greeting" || action.startsWith("reprompt_");
 }
 
 function buildConfiguredSystemPrompt(
@@ -288,11 +298,15 @@ function matchIntentStart(normalizedTranscript: string): boolean {
 
 const SPECIALIZATION_ALIASES: Record<string, string[]> = {
   "General Medicine": [
+    "general",
     "general medicine",
     "general physician",
     "physician",
     "general doctor",
     "family doctor",
+    "medicine",
+    "मेडिसिन",
+    "जनरल",
     "जनरल मेडिसिन",
     "जनरल फिजिशियन",
     "फिजिशियन"
@@ -310,9 +324,13 @@ const SPECIALIZATION_ALIASES: Record<string, string[]> = {
     "dermatology",
     "dermatologist",
     "skin specialist",
+    "skin",
     "डर्मेटोलॉजी",
     "डर्मेटोलॉजिस्ट",
-    "स्किन स्पेशलिस्ट"
+    "स्किन स्पेशलिस्ट",
+    "स्किन",
+    "त्वचा",
+    "मुड्ड पीब्रोलॉजी"
   ]
 };
 
@@ -379,7 +397,7 @@ function mapDoctorPreference(normalizedTranscript: string, session: DemoSessionR
     };
   }
 
-  if (normalizedTranscript.includes("koi bhi doctor chalega") || normalizedTranscript.includes("earliest available doctor")) {
+  if (isEarliestAvailableDoctorRequest(normalizedTranscript)) {
     const bySpecialization = doctorList.find((doctor) => doctor.specialization === session.selectedSpecialization) ?? doctorList[0];
 
     return {
@@ -392,24 +410,60 @@ function mapDoctorPreference(normalizedTranscript: string, session: DemoSessionR
   return null;
 }
 
+function isEarliestAvailableDoctorRequest(normalizedTranscript: string): boolean {
+  return [
+    "koi bhi doctor chalega",
+    "koi bhi chalega",
+    "earliest available doctor",
+    "earliest available",
+    "earliest",
+    "available doctor",
+    "अर्लिएस्ट अवेलेबल",
+    "अर्लिएस्ट अवेलेबल डॉक्टर",
+    "अवेलेबल डॉक्टर",
+    "कोई भी डॉक्टर",
+    "कोई भी चलेगा",
+    "जल्दी वाला डॉक्टर",
+    "पहला available",
+    "पहला अवेलेबल"
+  ].some((phrase) => normalizedTranscript.includes(phrase));
+}
+
 function buildDoctorAliases(doctor: RuntimeDoctor): string[] {
   const rawName = doctor.name.toLowerCase();
   const noTitle = rawName.replace(/^dr\.?\s+/, "").trim();
-  const aliases = new Set<string>([rawName, noTitle, `dr ${noTitle}`]);
+  const nameParts = noTitle.split(/\s+/).filter(Boolean);
+  const aliases = new Set<string>([rawName, noTitle, `dr ${noTitle}`, ...nameParts]);
 
   if (doctor.doctorId === "doctor-1") {
     aliases.add("ananya sharma");
+    aliases.add("ananya");
+    aliases.add("doctor ananya");
     aliases.add("अनन्या शर्मा");
+    aliases.add("अनन्या");
+    aliases.add("अनन्या सर");
+    aliases.add("अनया शर्मा");
+    aliases.add("अनया");
+    aliases.add("डॉक्टर अनन्या");
+    aliases.add("डॉक्टर अनया");
   }
 
   if (doctor.doctorId === "doctor-2") {
     aliases.add("rohan patel");
+    aliases.add("rohan");
+    aliases.add("doctor rohan");
     aliases.add("रोहन पटेल");
+    aliases.add("रोहन");
+    aliases.add("डॉक्टर रोहन");
   }
 
   if (doctor.doctorId === "doctor-3") {
     aliases.add("meera shah");
+    aliases.add("meera");
+    aliases.add("doctor meera");
     aliases.add("मीरा शाह");
+    aliases.add("मीरा");
+    aliases.add("डॉक्टर मीरा");
   }
 
   return Array.from(aliases);
@@ -468,7 +522,23 @@ function extractMobile(transcript: string): string | null {
     .replace(/[०-९]/g, (digit) => String("०१२३४५६७८९".indexOf(digit)))
     .replace(/\D/g, "");
 
-  return digits.length >= 10 ? digits.slice(-10) : null;
+  if (digits.length === 10) {
+    return digits;
+  }
+
+  if (digits.length === 11 && /^[6-9]/.test(digits)) {
+    return digits.slice(0, 10);
+  }
+
+  if (digits.length === 11 && digits.startsWith("0")) {
+    return digits.slice(1);
+  }
+
+  if (digits.length === 12 && digits.startsWith("91")) {
+    return digits.slice(2);
+  }
+
+  return digits.length > 12 ? digits.slice(-10) : null;
 }
 
 function scorePrefixMatch(candidate: string, reference: string): number {
@@ -501,12 +571,6 @@ function resolveMobile(transcript: string, callerNumber?: string | null, existin
   const exactMobile = extractMobile(transcript);
 
   if (exactMobile) {
-    const trustedCallerNumber = fallbackCandidates[0] ?? null;
-
-    if (trustedCallerNumber && trustedCallerNumber !== exactMobile && scorePrefixMatch(exactMobile, trustedCallerNumber) < 0.7) {
-      return trustedCallerNumber.slice(-10);
-    }
-
     return exactMobile;
   }
 
@@ -647,32 +711,64 @@ function mapDateFlexible(normalizedTranscript: string): string | null {
     return mapped;
   }
 
-  if (["monday", "manday", "mon day", "मंडे", "सोमवार"].some((phrase) => normalized.includes(phrase))) {
-    return "monday";
-  }
+  const dayAliases: Array<{ day: string; aliases: string[] }> = [
+    {
+      day: "monday",
+      aliases: ["monday", "mon day", "manday", "munde", "monday ko", "somvar", "somwaar", "सोमवार", "मंडे", "मन्डे", "मांडे"]
+    },
+    {
+      day: "tuesday",
+      aliases: ["tuesday", "tues day", "tusday", "tyusday", "mangalvar", "mangalwaar", "मंगलवार", "ट्यूजडे", "ट्यूसडे"]
+    },
+    {
+      day: "wednesday",
+      aliases: [
+        "wednesday",
+        "wednes day",
+        "wednessday",
+        "wedensday",
+        "wednsday",
+        "wensday",
+        "wenzday",
+        "venusday",
+        "vensday",
+        "venasday",
+        "wed",
+        "budhvar",
+        "budhwar",
+        "बुधवार",
+        "बुधवार को",
+        "वेडनेसडे",
+        "वेडन्सडे",
+        "वेडनसडे",
+        "वेनसडे",
+        "वेंसडे",
+        "वेन्सडे",
+        "भूतवाद"
+      ]
+    },
+    {
+      day: "thursday",
+      aliases: ["thursday", "thurs day", "thusday", "guruwar", "guruvar", "गुरुवार", "बृहस्पतिवार", "थर्सडे"]
+    },
+    {
+      day: "friday",
+      aliases: ["friday", "fri day", "fraiday", "shukrawar", "shukrvar", "शुक्रवार", "फ्राइडे", "फ्रायडे"]
+    },
+    {
+      day: "saturday",
+      aliases: ["saturday", "satur day", "satday", "shanivar", "shaniwar", "शनिवार", "सैटरडे", "सैटर्डे"]
+    },
+    {
+      day: "sunday",
+      aliases: ["sunday", "sun day", "ravivar", "raviwar", "रविवार", "संडे", "सन्डे"]
+    }
+  ];
 
-  if (["tuesday", "ट्यूसडे", "मंगलवार"].some((phrase) => normalized.includes(phrase))) {
-    return "tuesday";
-  }
-
-  if (["wednesday", "वेडनेसडे", "बुधवार"].some((phrase) => normalized.includes(phrase))) {
-    return "wednesday";
-  }
-
-  if (["thursday", "थर्सडे", "गुरुवार"].some((phrase) => normalized.includes(phrase))) {
-    return "thursday";
-  }
-
-  if (["friday", "फ्राइडे", "शुक्रवार"].some((phrase) => normalized.includes(phrase))) {
-    return "friday";
-  }
-
-  if (["saturday", "सैटरडे", "शनिवार"].some((phrase) => normalized.includes(phrase))) {
-    return "saturday";
-  }
-
-  if (["sunday", "संडे", "रविवार"].some((phrase) => normalized.includes(phrase))) {
-    return "sunday";
+  for (const entry of dayAliases) {
+    if (entry.aliases.some((phrase) => normalized.includes(phrase))) {
+      return entry.day;
+    }
   }
 
   return null;
@@ -693,19 +789,24 @@ function mapConfirmationFlexible(normalizedTranscript: string): "confirm" | "cha
 }
 
 function buildConfirmationSummary(session: DemoSessionRecord, prompts: ConversationPrompts): string {
-  return `${prompts.confirmPrefix} Doctor ${session.selectedDoctor ?? "assigned"} ke saath ${session.preferredDate ?? "selected date"} ko ${
+  const doctorName = stripDoctorTitle(session.selectedDoctor ?? "assigned doctor");
+  return `${prompts.confirmPrefix} Dr. ${doctorName} ke saath ${session.preferredDate ?? "selected date"} ${
     session.preferredTime ?? "selected time"
-  } ka slot hai. Name ${session.patientName ?? "patient"}, mobile ${session.contactNumber ?? "not provided"}, ${
+  } slot. Name ${session.patientName ?? "patient"}, mobile ${session.contactNumber ?? "not provided"}, ${
     session.patientType ?? "consultation"
-  }. Agar sab sahi hai to haan boliye.`;
+  }. Sahi ho to haan boliye.`;
 }
 
 function buildFinalSummary(session: DemoSessionRecord, appointmentId: string | null, prompts: ConversationPrompts): string {
-  return `${prompts.bookingConfirmed} Aapki appointment ${session.selectedDoctor ?? "assigned doctor"} ke saath ${session.preferredDate ?? "selected date"} ko ${
+  const doctorName = stripDoctorTitle(session.selectedDoctor ?? "assigned doctor");
+  const shortReference = appointmentId ? appointmentId.slice(-4).toUpperCase() : "pending";
+  return `${prompts.bookingConfirmed} Dr. ${doctorName} ke saath ${session.preferredDate ?? "selected date"} ${
     session.preferredTime ?? "selected time"
-  } ke liye booked ho gayi hai. Patient name ${session.patientName ?? "patient"}, mobile ${session.contactNumber ?? "not provided"}, patient type ${
-    session.patientType ?? "consultation"
-  }. Reference id ${appointmentId ?? "pending"}.`;
+  } appointment booked. Reference last 4: ${shortReference}.`;
+}
+
+function stripDoctorTitle(name: string): string {
+  return String(name || "assigned doctor").replace(/^dr\.?\s+/i, "").trim();
 }
 
 function updateSession(session: DemoSessionRecord, changes: Partial<DemoSessionRecord>): DemoSessionRecord {
@@ -720,6 +821,8 @@ async function syncSessionToDb(session: DemoSessionRecord): Promise<void> {
   try {
     const doctors = await DoctorModel.find().lean();
     const matchingDoctor = doctors.find((doctor) => doctor.name === session.selectedDoctor) ?? null;
+    const usageLedger = session.usageLedger ?? [];
+    const costSummary = summarizeUsageLedger(usageLedger as UsageLedgerEntry[]);
     const outcome =
       session.bookingStage === "booked"
         ? "booked"
@@ -751,6 +854,8 @@ async function syncSessionToDb(session: DemoSessionRecord): Promise<void> {
           bookingResult: session.bookingResult,
           currentNode: session.bookingStage,
           outcome,
+          costSummary,
+          usageLedger,
           transcriptHistory: session.transcriptHistory,
           startedAt: session.createdAt,
           updatedAt: session.updatedAt,
@@ -775,6 +880,46 @@ export class BotService {
     return this.repository.getSession(sessionId);
   }
 
+  async recordUsage(sessionId: string, usageEvents: UsageEventInput[]): Promise<DemoSessionRecord | null> {
+    const session = this.repository.getSession(sessionId);
+
+    if (!session) {
+      return null;
+    }
+
+    const usageLedger = [
+      ...(session.usageLedger ?? []),
+      ...usageEvents.map((event) => createUsageLedgerEntry(event))
+    ];
+
+    const updated = updateSession(session, { usageLedger });
+    this.repository.saveSession(updated);
+    await syncSessionToDb(updated);
+
+    return updated;
+  }
+
+  async endSession(sessionId: string, reason = "hangup"): Promise<DemoSessionRecord | null> {
+    const session = this.repository.getSession(sessionId);
+
+    if (!session) {
+      return null;
+    }
+
+    if (session.callStatus !== "active") {
+      return session;
+    }
+
+    const updated = updateSession(session, {
+      callStatus: "completed",
+      bookingResult: session.bookingResult ?? `Call ended: ${reason}`
+    });
+    this.repository.saveSession(updated);
+    await syncSessionToDb(updated);
+
+    return updated;
+  }
+
   async processCall(input: ProcessCallInput): Promise<ProcessCallOutput> {
     if (!DEMO_MODE_ENABLED) {
       return this.processLegacyCall(input);
@@ -793,7 +938,11 @@ export class BotService {
     let session = this.repository.getSession(input.sessionId) ?? createNewSession(input.sessionId, input.callerNumber);
     session = updateSession(session, {
       callerNumber: input.callerNumber ?? session.callerNumber,
-      transcriptHistory: [...session.transcriptHistory, createHistoryEntry("caller", input.transcript)]
+      transcriptHistory: [...session.transcriptHistory, createHistoryEntry("caller", input.transcript)],
+      usageLedger: [
+        ...(session.usageLedger ?? []),
+        ...(input.usageEvents ?? []).map((event) => createUsageLedgerEntry(event))
+      ]
     });
 
     const prompts = resolveConversationPrompts(clinicSettings, runtimeDoctors, session);
@@ -1045,7 +1194,37 @@ export class BotService {
       }
     }
 
+    const fallbackAttempts = isFallbackAction(action) ? (session.fallbackAttempts ?? 0) + 1 : 0;
+    session = updateSession(session, { fallbackAttempts });
+
+    if (fallbackAttempts >= 2 && isFallbackAction(action)) {
+      const policy = clinicSettings?.fallbackPolicy ?? "ask_again";
+
+      if (policy === "transfer") {
+        const transferPrefix = prompts.transferMessage.replace("the configured clinic number", "").trim();
+        reply = `${transferPrefix} ${clinicSettings?.transferNumber ?? "the configured clinic number"}.`.trim();
+        action = "fallback_transfer";
+        latestIntent = "human_escalation";
+        stage = "fallback";
+        session = updateSession(session, { callStatus: "completed" });
+      } else if (policy === "end_call") {
+        reply = prompts.goodbyeMessage;
+        action = "fallback_end_call";
+        stage = "fallback";
+        session = updateSession(session, { callStatus: "completed" });
+      } else if (policy === "create_callback") {
+        reply = "I will ask reception to call you back shortly. Thank you.";
+        action = "fallback_create_callback";
+        stage = "fallback";
+        session = updateSession(session, {
+          callStatus: "completed",
+          bookingResult: "Callback requested after fallback"
+        });
+      }
+    }
+
     if (canUseConfiguredLlmReply(action)) {
+      const llmConfig = clinicSettings?.llmProviders;
       reply = await applyConfiguredLlmReply(
         normalizedTranscript,
         { ...session, bookingStage: stage, latestIntent },
@@ -1054,6 +1233,21 @@ export class BotService {
         runtimeDoctors,
         reply
       );
+
+      if (llmConfig && llmConfig.primaryProvider && llmConfig.primaryProvider !== "mock") {
+        session = updateSession(session, {
+          usageLedger: [
+            ...(session.usageLedger ?? []),
+            createUsageLedgerEntry({
+              service: "llm",
+              provider: llmConfig.primaryProvider,
+              model: llmConfig.model,
+              text: `${normalizedTranscript}\n${reply}`,
+              quantity: reply.length
+            })
+          ]
+        });
+      }
     }
 
     session = updateSession(session, {

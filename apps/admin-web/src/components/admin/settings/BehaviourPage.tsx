@@ -13,6 +13,13 @@ export function BehaviourPage() {
   const [bookingEnabled, setBookingEnabled] = useState(true);
   const [transferNumber, setTransferNumber] = useState("");
   const [fallbackResponse, setFallbackResponse] = useState("");
+  const [fallbackPolicy, setFallbackPolicy] = useState<SettingsRecord["fallbackPolicy"]>("ask_again");
+  const [costDisplay, setCostDisplay] = useState({
+    showSttCost: true,
+    showTtsCost: true,
+    showLlmCost: true,
+    showTotalCost: true,
+  });
   const [supportedIntents, setSupportedIntents] = useState<string[]>([]);
   const [loading, setLoading]     = useState(true);
   const [saving, setSaving]       = useState(false);
@@ -39,6 +46,13 @@ export function BehaviourPage() {
     setBookingEnabled(r.bookingEnabled);
     setTransferNumber(r.transferNumber ?? "");
     setFallbackResponse(r.fallbackResponse ?? "");
+    setFallbackPolicy(r.fallbackPolicy ?? "ask_again");
+    setCostDisplay({
+      showSttCost: r.costDisplay?.showSttCost ?? true,
+      showTtsCost: r.costDisplay?.showTtsCost ?? true,
+      showLlmCost: r.costDisplay?.showLlmCost ?? true,
+      showTotalCost: r.costDisplay?.showTotalCost ?? true,
+    });
     setSupportedIntents(r.supportedIntents ?? []);
     setSaved(false);
   }
@@ -55,6 +69,8 @@ export function BehaviourPage() {
         bookingEnabled,
         transferNumber,
         fallbackResponse,
+        fallbackPolicy,
+        costDisplay,
         supportedIntents,
       });
       setSaved(true);
@@ -126,6 +142,21 @@ export function BehaviourPage() {
           <CardHeader title="Fallback & Recovery" subtitle="What happens when the bot can't understand" />
           <div className="space-y-4">
             <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Fallback Policy</label>
+              <p className="text-[11px] text-slate-400 mb-1.5">After repeated failed understanding attempts</p>
+              <select
+                disabled={!isAdmin}
+                value={fallbackPolicy}
+                onChange={(e) => setFallbackPolicy(e.target.value as SettingsRecord["fallbackPolicy"])}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+              >
+                <option value="ask_again">Ask again</option>
+                <option value="transfer">Transfer to reception</option>
+                <option value="end_call">End call</option>
+                <option value="create_callback">Create callback task</option>
+              </select>
+            </div>
+            <div>
               <label className="block text-xs font-medium text-slate-600 mb-1.5">Fallback Response</label>
               <p className="text-[11px] text-slate-400 mb-1.5">Message spoken when the AI cannot understand or fulfil a request</p>
               <textarea
@@ -137,6 +168,33 @@ export function BehaviourPage() {
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none disabled:opacity-50"
               />
             </div>
+          </div>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader title="Cost Display Settings" subtitle="Choose which estimated cost columns operators can see" />
+          <div className="divide-y divide-slate-100">
+            {[
+              ["showSttCost", "Show STT Cost Column", "Speech-to-text estimate per call"],
+              ["showTtsCost", "Show TTS Cost Column", "Text-to-speech estimate per call"],
+              ["showLlmCost", "Show LLM Cost Column", "Language-model estimate per call"],
+              ["showTotalCost", "Show Total Cost Column", "Combined estimated AI cost per call"],
+            ].map(([key, label, description]) => (
+              <div key={key} className="flex items-center justify-between py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-700">{label}</p>
+                  <p className="text-xs text-slate-400">{description}</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!isAdmin}
+                  onClick={() => setCostDisplay((current) => ({ ...current, [key]: !current[key as keyof typeof current] }))}
+                  className={`relative w-12 h-6 rounded-full transition-all duration-200 focus:outline-none ${costDisplay[key as keyof typeof costDisplay] ? "bg-indigo-600" : "bg-slate-300"} disabled:opacity-50`}
+                >
+                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all duration-200 ${costDisplay[key as keyof typeof costDisplay] ? "left-6" : "left-0.5"}`} />
+                </button>
+              </div>
+            ))}
           </div>
         </Card>
 

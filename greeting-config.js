@@ -86,7 +86,7 @@ const greetingConfig = {
     greetingTtsProvider: readString('GREETING_TTS_PROVIDER', 'mock').toLowerCase(),
     sarvamApiKey: readString('SARVAM_API_KEY', ''),
     sarvamTtsModel: readString('SARVAM_TTS_MODEL', 'bulbul:v3'),
-    sarvamTtsSpeaker: readString('SARVAM_TTS_SPEAKER', 'shubh').toLowerCase(),
+    sarvamTtsSpeaker: readString('SARVAM_TTS_SPEAKER', 'priya').toLowerCase(),
     sarvamTtsLanguage: readString('SARVAM_TTS_LANGUAGE', 'en-IN'),
     sarvamTtsSampleRate: readNumber('SARVAM_TTS_SAMPLE_RATE', 8000),
     sttProvider: readString('STT_PROVIDER', 'mock').toLowerCase(),

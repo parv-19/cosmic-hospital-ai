@@ -16,6 +16,7 @@ export type DashboardResponse = {
     failed: number;
     activeCalls: number;
     appointments: number;
+    totalCost: number;
   };
   doctorStats: Array<{
     doctorId: string;
@@ -79,6 +80,28 @@ export type CallRecord = {
   bookingResult: string | null;
   currentNode: string | null;
   outcome: string;
+  costSummary?: {
+    currency: string;
+    sttCost: number;
+    ttsCost: number;
+    llmCost: number;
+    transferCost: number;
+    totalCost: number;
+    estimated: boolean;
+  };
+  usageLedger?: Array<{
+    service: string;
+    provider: string;
+    model: string;
+    unit: string;
+    quantity: number;
+    unitPrice: number;
+    currency: string;
+    estimatedCost: number;
+    estimated: boolean;
+    pricingSourceUrl: string;
+    createdAt: string;
+  }>;
   transcriptHistory: TranscriptEntry[];
   startedAt: string;
   updatedAt: string;
@@ -97,6 +120,13 @@ export type SettingsRecord = {
   transferNumber: string;
   bookingEnabled: boolean;
   emergencyMessage: string;
+  fallbackPolicy?: "ask_again" | "transfer" | "end_call" | "create_callback";
+  costDisplay?: {
+    showSttCost?: boolean;
+    showTtsCost?: boolean;
+    showLlmCost?: boolean;
+    showTotalCost?: boolean;
+  } | null;
   conversationPrompts: {
     askSpecialization?: string;
     askDoctorPreference?: string;
@@ -168,7 +198,29 @@ export type AnalyticsResponse = {
   intentDistribution: Array<{ label: string; value: number }>;
 };
 
-const apiBaseUrl = import.meta.env.VITE_PLATFORM_API_URL ?? import.meta.env.VITE_DOCTOR_SERVICE_URL ?? "http://localhost:4001";
+function resolveApiBaseUrl() {
+  const configuredUrl = import.meta.env.VITE_PLATFORM_API_URL ?? import.meta.env.VITE_DOCTOR_SERVICE_URL ?? "/api";
+
+  if (configuredUrl.startsWith("/")) {
+    return configuredUrl.replace(/\/$/, "");
+  }
+
+  try {
+    const url = new URL(configuredUrl);
+    const pageHost = window.location.hostname;
+
+    if (pageHost && pageHost !== "localhost" && pageHost !== "127.0.0.1" && (url.hostname === "localhost" || url.hostname === "127.0.0.1")) {
+      url.hostname = pageHost;
+      return url.toString().replace(/\/$/, "");
+    }
+  } catch {
+    return configuredUrl;
+  }
+
+  return configuredUrl;
+}
+
+const apiBaseUrl = resolveApiBaseUrl();
 
 async function request<T>(path: string, init?: RequestInit, token?: string | null): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -253,6 +305,19 @@ export function fetchSettings(token: string) {
 
 export function updateSettings(token: string, body: Record<string, unknown>) {
   return request<SettingsRecord>("/settings", { method: "PUT", body: JSON.stringify(body) }, token);
+}
+
+export function checkProviderHealth(token: string, body: Record<string, unknown>) {
+  return request<{
+    ok: boolean;
+    provider: string;
+    service: string;
+    model: string;
+    keyRef: string;
+    keyAvailable: boolean;
+    warnings: string[];
+    note: string;
+  }>("/provider-health", { method: "POST", body: JSON.stringify(body) }, token);
 }
 
 export function fetchFaq(token: string) {

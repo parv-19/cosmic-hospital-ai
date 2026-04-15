@@ -19,6 +19,7 @@ const MAX_CHUNK_SIZE = 320;      // 20ms @ 8kHz PCM
 const INTERVAL_MS = 100;
 const MIN_INBOUND_CHUNKS = 20;
 const BOT_ENGINE_URL = 'http://localhost:4004/process-call';
+const BOT_ENGINE_BASE_URL = BOT_ENGINE_URL.replace(/\/process-call$/, '');
 const PLAY_WELCOME_FILE = greetingConfig.playWelcomeFile;
 const END_OF_SPEECH_MS = greetingConfig.endOfSpeechMs;
 const MIN_UTTERANCE_MS = greetingConfig.minUtteranceMs;
@@ -115,9 +116,11 @@ function createSessionState(ws) {
         processedUtterances: 0,
         lastProcessedAt: 0,
         minProcessGapMs: 4000,
+        pendingUsageEvents: [],
         demoTurnIndex: 0,
         demoCompleted: false,
         hangupSent: false,
+        cleanupNotified: false,
     };
 }
 
@@ -307,7 +310,7 @@ function hasSpeechEnergy(chunk) {
     return (sumAbs / samples) >= SPEECH_CHUNK_AVG_ABS_THRESHOLD;
 }
 
-async function callBotEngine(transcript, sessionId, callerNumber) {
+async function callBotEngine(transcript, sessionId, callerNumber, usageEvents = []) {
     logger.log(`[${sessionId}] calling bot-engine at ${BOT_ENGINE_URL}`);
 
     const response = await fetch(BOT_ENGINE_URL, {
@@ -318,7 +321,8 @@ async function callBotEngine(transcript, sessionId, callerNumber) {
         body: JSON.stringify({
             transcript,
             sessionId,
-            callerNumber
+            callerNumber,
+            usageEvents
         })
     });
 
@@ -329,6 +333,52 @@ async function callBotEngine(transcript, sessionId, callerNumber) {
     const payload = await response.json();
     logger.log(`[${sessionId}] bot-engine response received`);
     return payload;
+}
+
+async function recordUsageLedger(sessionId, usageEvents) {
+    if (!Array.isArray(usageEvents) || usageEvents.length === 0) {
+        return;
+    }
+
+    try {
+        await fetch('http://localhost:4004/usage-ledger', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                sessionId,
+                usageEvents
+            })
+        });
+    } catch (error) {
+        logger.error(`[${sessionId}] usage ledger update failed: ${error.message}`);
+    }
+}
+
+async function endBotSession(sessionId, reason) {
+    if (!sessionId) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${BOT_ENGINE_BASE_URL}/end-session`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                sessionId,
+                reason
+            })
+        });
+
+        if (!response.ok && response.status !== 404) {
+            logger.error(`[${sessionId}] end-session failed status=${response.status}`);
+        }
+    } catch (error) {
+        logger.error(`[${sessionId}] end-session failed: ${error.message}`);
+    }
 }
 
 async function mockTTS(text) {
@@ -391,6 +441,14 @@ async function playConfiguredGreeting(state) {
                 ...greetingConfig,
                 ...(state.aiConfig?.ttsProviders || {}),
                 greetingText: state.aiConfig?.greetingMessage || greetingConfig.greetingText
+            });
+            const ttsConfig = state.aiConfig?.ttsProviders || {};
+            state.pendingUsageEvents.push({
+                service: 'tts',
+                provider: ttsConfig.primaryProvider || greetingConfig.greetingTtsProvider || 'mock',
+                model: ttsConfig.model || greetingConfig.sarvamTtsModel || 'mock',
+                text: state.aiConfig?.greetingMessage || greetingConfig.greetingText,
+                quantity: String(state.aiConfig?.greetingMessage || greetingConfig.greetingText).length
             });
             enqueueOutbound(state, audioBuffer);
             logger.log('[greeting] dynamic greeting enqueued', {
@@ -558,13 +616,33 @@ async function finalizeCurrentUtterance(state, reason) {
         logger.log(`[stt][final] uuid=${state.uuid || 'pending'} transcript="${transcript}"`);
         logger.log(`[stt] transcript=${transcript}`);
 
-        const botResponse = await callBotEngine(transcript, state.uuid || 'demo-session', state.callerNumber || 'unknown');
+        const sttConfig = state.aiConfig?.sttProviders || {};
+        const usageEvents = [
+            ...state.pendingUsageEvents.splice(0, state.pendingUsageEvents.length),
+            {
+                service: 'stt',
+                provider: sttConfig.primaryProvider || greetingConfig.sttProvider || 'mock',
+                model: sttConfig.model || greetingConfig.sarvamSttModel || 'mock',
+                durationMs: utteranceMs
+            }
+        ];
+        const botResponse = await callBotEngine(transcript, state.uuid || 'demo-session', state.callerNumber || 'unknown', usageEvents);
         const replyText = botResponse?.data?.reply || 'I am sorry, I could not process your request right now.';
         logger.log(`[${state.uuid || 'demo-session'}] bot reply: ${replyText}`);
         logger.log(`[${state.uuid || 'demo-session'}] bot state stage=${botResponse?.data?.stage || 'unknown'} action=${botResponse?.data?.action || 'unknown'} intent=${botResponse?.data?.intent || 'unknown'}`);
 
         const audioBuffer = await generateReplyTtsAudio(state, replyText);
         logger.log(`[${state.uuid || 'demo-session'}] reply TTS buffer generated: ${audioBuffer.length} bytes`);
+        const ttsConfig = state.aiConfig?.ttsProviders || {};
+        void recordUsageLedger(state.uuid || 'demo-session', [
+            {
+                service: 'tts',
+                provider: ttsConfig.primaryProvider || greetingConfig.greetingTtsProvider || 'mock',
+                model: ttsConfig.model || greetingConfig.sarvamTtsModel || 'mock',
+                text: replyText,
+                quantity: replyText.length
+            }
+        ]);
 
         setTurnState(state, 'SPEAKING', 'reply-tts');
         state.speakingSource = 'reply';
@@ -670,6 +748,10 @@ function isUsableTranscript(text) {
 
 function _cleanup(state, reason) {
     logger.log(`Cleanup ${state.uuid} (${reason})`);
+    if (state.uuid && !state.cleanupNotified) {
+        state.cleanupNotified = true;
+        void endBotSession(state.uuid, reason);
+    }
     activeSessions.delete(state);
     if (state.sendTimer) {
         clearInterval(state.sendTimer);

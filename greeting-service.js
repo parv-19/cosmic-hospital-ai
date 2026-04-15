@@ -190,12 +190,29 @@ async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger
     }
 }
 
+const SARVAM_TTS_VOICES_BY_MODEL = {
+    'bulbul:v3': new Set(['aditya', 'ritu', 'ashutosh', 'priya', 'neha', 'rahul', 'pooja', 'rohan', 'simran', 'kavya', 'amit', 'dev']),
+    'bulbul:v2': new Set(['anushka', 'abhilash', 'manisha', 'vidya'])
+};
+
+const SARVAM_TTS_DEFAULT_VOICE_BY_MODEL = {
+    'bulbul:v3': 'priya',
+    'bulbul:v2': 'anushka'
+};
+
 function resolveSarvamTtsConfig(config) {
+    const requestedModel = String(config?.model || config?.sarvamTtsModel || 'bulbul:v3').toLowerCase();
+    const model = SARVAM_TTS_VOICES_BY_MODEL[requestedModel] ? requestedModel : 'bulbul:v3';
+    const requestedSpeaker = String(config?.voice || config?.speaker || config?.sarvamTtsSpeaker || SARVAM_TTS_DEFAULT_VOICE_BY_MODEL[model] || 'priya').toLowerCase();
+    const allowedSpeakers = SARVAM_TTS_VOICES_BY_MODEL[model];
+
     return {
-        model: String(config?.model || 'bulbul:v3'),
-        speaker: String(config?.voice || 'shubh').toLowerCase(),
-        language: String(config?.language || 'en-IN'),
-        sampleRate: Number(config?.sampleRate) || 8000
+        model,
+        speaker: allowedSpeakers && !allowedSpeakers.has(requestedSpeaker)
+            ? SARVAM_TTS_DEFAULT_VOICE_BY_MODEL[model]
+            : requestedSpeaker,
+        language: String(config?.language || config?.sarvamTtsLanguage || 'en-IN'),
+        sampleRate: Number(config?.sampleRate || config?.sarvamTtsSampleRate) || 8000
     };
 }
 

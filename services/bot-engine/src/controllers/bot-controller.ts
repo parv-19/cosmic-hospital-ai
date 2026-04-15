@@ -13,7 +13,7 @@ export class BotController {
   constructor(private readonly botService: BotService) {}
 
   processCall = async (req: Request, res: Response): Promise<void> => {
-    const { transcript, sessionId, callerNumber } = req.body as Record<string, string | undefined>;
+    const { transcript, sessionId, callerNumber, usageEvents } = req.body as Record<string, any>;
 
     if (!transcript) {
       sendError(res, "transcript is required.", 400);
@@ -24,10 +24,47 @@ export class BotController {
       transcript,
       sessionId: sessionId ?? "demo-session",
       callerNumber,
+      usageEvents: Array.isArray(usageEvents) ? usageEvents : [],
       aiServiceUrl: env.aiServiceUrl,
       doctorServiceUrl: env.doctorServiceUrl,
       appointmentServiceUrl: env.appointmentServiceUrl
     });
+
+    sendSuccess(res, result);
+  };
+
+  recordUsage = async (req: Request, res: Response): Promise<void> => {
+    const { sessionId, usageEvents } = req.body as Record<string, any>;
+
+    if (!sessionId || !Array.isArray(usageEvents)) {
+      sendError(res, "sessionId and usageEvents are required.", 400);
+      return;
+    }
+
+    const result = await this.botService.recordUsage(sessionId, usageEvents);
+
+    if (!result) {
+      sendError(res, "Session not found.", 404);
+      return;
+    }
+
+    sendSuccess(res, result);
+  };
+
+  endSession = async (req: Request, res: Response): Promise<void> => {
+    const { sessionId, reason } = req.body as Record<string, any>;
+
+    if (!sessionId) {
+      sendError(res, "sessionId is required.", 400);
+      return;
+    }
+
+    const result = await this.botService.endSession(sessionId, reason ?? "hangup");
+
+    if (!result) {
+      sendError(res, "Session not found.", 404);
+      return;
+    }
 
     sendSuccess(res, result);
   };

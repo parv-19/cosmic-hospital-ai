@@ -88,6 +88,13 @@ const doctorBotSettingsSchema = new Schema(
     transferNumber: { type: String, required: true },
     bookingEnabled: { type: Boolean, default: true },
     emergencyMessage: { type: String, required: true },
+    fallbackPolicy: { type: String, enum: ["ask_again", "transfer", "end_call", "create_callback"], default: "ask_again" },
+    costDisplay: {
+      showSttCost: { type: Boolean, default: true },
+      showTtsCost: { type: Boolean, default: true },
+      showLlmCost: { type: Boolean, default: true },
+      showTotalCost: { type: Boolean, default: true }
+    },
     conversationPrompts: {
       askSpecialization: { type: String, default: "Aap kis doctor ya specialization ke liye appointment lena chahte hain?" },
       askDoctorPreference: { type: String, default: "Kya aap kisi specific doctor se milna chahte hain ya earliest available doctor chalega?" },
@@ -134,7 +141,7 @@ const doctorBotSettingsSchema = new Schema(
       primaryProvider: { type: String, enum: ["mock", "sarvam", "openai", "elevenlabs"], default: "sarvam" },
       fallbackChain: { type: [String], default: ["mock"] },
       model: { type: String, default: "bulbul:v3" },
-      voice: { type: String, default: "shubh" },
+      voice: { type: String, default: "priya" },
       apiKeyRef: { type: String, default: "SARVAM_API_KEY" },
       timeoutMs: { type: Number, default: 10000 }
     }
@@ -195,6 +202,33 @@ const callLogSchema = new Schema(
     bookingResult: { type: String, default: null },
     currentNode: { type: String, default: null },
     outcome: { type: String, default: "active", index: true },
+    costSummary: {
+      currency: { type: String, default: "INR" },
+      sttCost: { type: Number, default: 0 },
+      ttsCost: { type: Number, default: 0 },
+      llmCost: { type: Number, default: 0 },
+      transferCost: { type: Number, default: 0 },
+      totalCost: { type: Number, default: 0 },
+      estimated: { type: Boolean, default: true }
+    },
+    usageLedger: {
+      type: [
+        {
+          service: { type: String, required: true },
+          provider: { type: String, required: true },
+          model: { type: String, default: "" },
+          unit: { type: String, required: true },
+          quantity: { type: Number, required: true },
+          unitPrice: { type: Number, required: true },
+          currency: { type: String, required: true },
+          estimatedCost: { type: Number, required: true },
+          estimated: { type: Boolean, default: true },
+          pricingSourceUrl: { type: String, default: "" },
+          createdAt: { type: String, default: "" }
+        }
+      ],
+      default: []
+    },
     transcriptHistory: { type: [transcriptSchema], default: [] },
     startedAt: { type: String, required: true },
     updatedAt: { type: String, required: true },
@@ -328,6 +362,13 @@ export async function ensurePlatformSeedData(): Promise<void> {
             transferNumber: doctor.contactNumber,
             bookingEnabled: true,
             emergencyMessage: "If this is a medical emergency, please contact emergency support immediately.",
+            fallbackPolicy: "ask_again",
+            costDisplay: {
+              showSttCost: true,
+              showTtsCost: true,
+              showLlmCost: true,
+              showTotalCost: true
+            },
             conversationPrompts: {
               askSpecialization: "Aap kis doctor ya specialization ke liye appointment lena chahte hain?",
               askDoctorPreference: "Kya aap kisi specific doctor se milna chahte hain ya earliest available doctor chalega?",
@@ -365,7 +406,7 @@ export async function ensurePlatformSeedData(): Promise<void> {
               primaryProvider: "mock",
               fallbackChain: [],
               model: "bulbul:v3",
-              voice: "shubh",
+              voice: "priya",
               apiKeyRef: "SARVAM_API_KEY",
               timeoutMs: 10000
             }

@@ -19,10 +19,24 @@ export type TranscriptEntry = {
   timestamp: string;
 };
 
+export type UsageLedgerEntry = {
+  service: "stt" | "tts" | "llm" | "transfer";
+  provider: string;
+  model: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number;
+  currency: "INR";
+  estimatedCost: number;
+  estimated: boolean;
+  pricingSourceUrl: string;
+  createdAt: string;
+};
+
 export type DemoSessionRecord = {
   sessionId: string;
   callerNumber: string;
-  callStatus: "active" | "completed" | "cancelled";
+  callStatus: "active" | "completed" | "cancelled" | "failed" | "transferred";
   bookingStage: BookingStage;
   selectedSpecialization: string | null;
   selectedDoctor: string | null;
@@ -34,8 +48,10 @@ export type DemoSessionRecord = {
   contactNumber: string | null;
   bookingResult: string | null;
   latestIntent: string | null;
+  fallbackAttempts: number;
   transcriptHistory: TranscriptEntry[];
   botResponseHistory: TranscriptEntry[];
+  usageLedger: UsageLedgerEntry[];
   createdAt: string;
   updatedAt: string;
   frozenConfig?: any;

@@ -37,6 +37,7 @@ export function createRoutes(controller: DoctorController): Router {
 
   router.get("/settings", requireAuth, controller.getSettings);
   router.put("/settings", requireAuth, requireRole("ADMIN", "DOCTOR"), controller.updateSettings);
+  router.post("/provider-health", requireAuth, requireRole("ADMIN", "DOCTOR"), controller.checkProviderHealth);
 
   router.get("/faq", requireAuth, controller.listFaq);
   router.put("/faq", requireAuth, requireRole("ADMIN", "DOCTOR"), controller.upsertFaq);

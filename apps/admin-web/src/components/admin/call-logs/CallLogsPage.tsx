@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { fetchCalls, fetchTranscript, type CallRecord, type TranscriptEntry } from "../../../api";
+import { fetchCalls, fetchSettings, fetchTranscript, type CallRecord, type SettingsRecord, type TranscriptEntry } from "../../../api";
 import { useAuth } from "../../../context/AuthContext";
 import { Card, CardHeader } from "../../ui/Card";
 import { Table } from "../../ui/Table";
@@ -17,6 +17,28 @@ function fmtDuration(s: number) {
   const m = Math.floor(s / 60), sec = s % 60;
   return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 }
+function fmtMoney(value: number | null | undefined) {
+  return `₹${Number(value ?? 0).toFixed(4)}`;
+}
+
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function recordMatchesDate(record: CallRecord, dateValue: string) {
+  if (!dateValue) return true;
+  return toDateInputValue(new Date(record.startedAt)) === dateValue;
+}
+
+const DEFAULT_COST_DISPLAY = {
+  showSttCost: true,
+  showTtsCost: true,
+  showLlmCost: true,
+  showTotalCost: true,
+};
 
 function exportCSV(calls: CallRecord[]) {
   const headers = ["Session ID", "Caller", "Outcome", "Doctor", "Duration (s)", "Started At"];
@@ -38,6 +60,8 @@ export function CallLogsPage() {
   const [error, setError]       = useState("");
   const [search, setSearch]     = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("");
+  const [costDisplay, setCostDisplay] = useState(DEFAULT_COST_DISPLAY);
 
   // Transcript modal
   const [selected, setSelected]     = useState<CallRecord | null>(null);
@@ -48,7 +72,9 @@ export function CallLogsPage() {
     if (!token) return;
     setLoading(true);
     try {
-      const data = await fetchCalls(token);
+      const [data, settings] = await Promise.all([fetchCalls(token), fetchSettings(token)]);
+      const firstSettings = settings[0] as SettingsRecord | undefined;
+      setCostDisplay({ ...DEFAULT_COST_DISPLAY, ...(firstSettings?.costDisplay ?? {}) });
       setCalls(data.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load calls.");
@@ -70,9 +96,10 @@ export function CallLogsPage() {
       const matchStatus =
         statusFilter === "all" ||
         c.outcome?.toLowerCase().includes(statusFilter.toLowerCase());
-      return matchSearch && matchStatus;
+      const matchDate = recordMatchesDate(c, dateFilter);
+      return matchSearch && matchStatus && matchDate;
     });
-  }, [calls, search, statusFilter]);
+  }, [calls, search, statusFilter, dateFilter]);
 
   async function openTranscript(call: CallRecord) {
     setSelected(call);
@@ -141,6 +168,18 @@ export function CallLogsPage() {
             <option value="transfer">Transferred</option>
             <option value="fail">Failed</option>
           </select>
+          <input
+            id="date-filter"
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          {dateFilter && (
+            <Button variant="secondary" size="sm" onClick={() => setDateFilter("")}>
+              Clear Date
+            </Button>
+          )}
         </div>
 
         <Table
@@ -169,6 +208,22 @@ export function CallLogsPage() {
               key: "durationSeconds", header: "Duration",
               render: (r) => <span className="text-slate-600 text-sm">{fmtDuration(r.durationSeconds as number)}</span>,
             },
+            ...(costDisplay.showSttCost ? [{
+              key: "sttCost", header: "STT Cost",
+              render: (r: Record<string, unknown>) => <span className="text-slate-600 text-xs">{fmtMoney((r as unknown as CallRecord).costSummary?.sttCost)}</span>,
+            }] : []),
+            ...(costDisplay.showTtsCost ? [{
+              key: "ttsCost", header: "TTS Cost",
+              render: (r: Record<string, unknown>) => <span className="text-slate-600 text-xs">{fmtMoney((r as unknown as CallRecord).costSummary?.ttsCost)}</span>,
+            }] : []),
+            ...(costDisplay.showLlmCost ? [{
+              key: "llmCost", header: "LLM Cost",
+              render: (r: Record<string, unknown>) => <span className="text-slate-600 text-xs">{fmtMoney((r as unknown as CallRecord).costSummary?.llmCost)}</span>,
+            }] : []),
+            ...(costDisplay.showTotalCost ? [{
+              key: "totalCost", header: "Total Cost",
+              render: (r: Record<string, unknown>) => <span className="text-slate-800 text-xs font-semibold">{fmtMoney((r as unknown as CallRecord).costSummary?.totalCost)}</span>,
+            }] : []),
             {
               key: "startedAt", header: "Time",
               render: (r) => <span className="text-xs text-slate-400">{fmtDate(r.startedAt as string)}</span>,
@@ -227,6 +282,11 @@ export function CallLogsPage() {
                 </div>
               </div>
             ))}
+            <div className="sticky bottom-0 bg-white/95 pt-3">
+              <Button variant="secondary" onClick={() => setSelected(null)}>
+                X Close Transcript
+              </Button>
+            </div>
           </div>
         )}
       </Modal>

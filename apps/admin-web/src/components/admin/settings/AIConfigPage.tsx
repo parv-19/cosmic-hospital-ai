@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { fetchSettings, updateSettings, type SettingsRecord } from "../../../api";
+import { checkProviderHealth, fetchSettings, updateSettings, type SettingsRecord } from "../../../api";
 import { useAuth } from "../../../context/AuthContext";
 import { Card, CardHeader } from "../../ui/Card";
 import { Button } from "../../ui/Button";
@@ -20,6 +20,139 @@ const LLM_PROVIDERS = ["mock", "openai", "claude", "sarvam"];
 const STT_PROVIDERS = ["mock", "sarvam", "openai", "deepgram"];
 const TTS_PROVIDERS = ["mock", "sarvam", "openai", "elevenlabs"];
 
+type SelectOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+};
+
+const PROVIDER_LABELS: Record<string, string> = {
+  mock: "Mock",
+  openai: "OpenAI",
+  claude: "Anthropic Claude",
+  sarvam: "Sarvam AI",
+  deepgram: "Deepgram",
+  elevenlabs: "ElevenLabs"
+};
+
+const LLM_MODELS: Record<string, SelectOption[]> = {
+  mock: [{ value: "mock", label: "Mock engine" }],
+  openai: [
+    { value: "gpt-4o-mini", label: "GPT-4o mini (recommended)" },
+    { value: "gpt-4o", label: "GPT-4o" },
+    { value: "gpt-4.1-mini", label: "GPT-4.1 mini" },
+    { value: "gpt-4o-realtime-preview", label: "OpenAI Realtime (requires realtime transport)", disabled: true }
+  ],
+  claude: [
+    { value: "claude-3-5-haiku-latest", label: "Claude Haiku 3.5 (recommended)" },
+    { value: "claude-3-5-sonnet-latest", label: "Claude Sonnet 3.5" }
+  ],
+  sarvam: [
+    { value: "sarvam-m", label: "Sarvam M (recommended)" }
+  ]
+};
+
+const STT_MODELS: Record<string, SelectOption[]> = {
+  mock: [{ value: "mock", label: "Mock transcript" }],
+  sarvam: [
+    { value: "saaras:v2", label: "Saarika v2" },
+    { value: "saaras:v3", label: "Saaras v3 (recommended)" }
+  ],
+  openai: [
+    { value: "whisper-1", label: "Whisper v1" },
+    { value: "gpt-4o-mini-transcribe", label: "GPT-4o mini transcribe" }
+  ],
+  deepgram: [
+    { value: "nova-2", label: "Nova 2" },
+    { value: "nova-3", label: "Nova 3" }
+  ]
+};
+
+const TTS_MODELS: Record<string, SelectOption[]> = {
+  mock: [{ value: "mock", label: "Mock audio" }],
+  sarvam: [
+    { value: "bulbul:v3", label: "Bulbul v3 (recommended)" },
+    { value: "bulbul:v2", label: "Bulbul v2 (legacy)" }
+  ],
+  openai: [
+    { value: "gpt-4o-mini-tts", label: "GPT-4o mini TTS" },
+    { value: "tts-1", label: "TTS-1" }
+  ],
+  elevenlabs: [
+    { value: "eleven_multilingual_v2", label: "Eleven Multilingual v2" }
+  ]
+};
+
+const TTS_VOICES: Record<string, Record<string, SelectOption[]>> = {
+  sarvam: {
+    "bulbul:v3": [
+      { value: "priya", label: "Priya (female, recommended)" },
+      { value: "neha", label: "Neha" },
+      { value: "pooja", label: "Pooja" },
+      { value: "simran", label: "Simran" },
+      { value: "kavya", label: "Kavya" },
+      { value: "ritu", label: "Ritu" },
+      { value: "aditya", label: "Aditya" },
+      { value: "ashutosh", label: "Ashutosh" },
+      { value: "rahul", label: "Rahul" },
+      { value: "rohan", label: "Rohan" },
+      { value: "amit", label: "Amit" },
+      { value: "dev", label: "Dev" }
+    ],
+    "bulbul:v2": [
+      { value: "anushka", label: "Anushka (female, recommended)" },
+      { value: "abhilash", label: "Abhilash" },
+      { value: "manisha", label: "Manisha" },
+      { value: "vidya", label: "Vidya" }
+    ]
+  },
+  openai: {
+    "gpt-4o-mini-tts": [
+      { value: "alloy", label: "Alloy" },
+      { value: "ash", label: "Ash" },
+      { value: "coral", label: "Coral" },
+      { value: "sage", label: "Sage" }
+    ],
+    "tts-1": [
+      { value: "alloy", label: "Alloy" },
+      { value: "nova", label: "Nova" },
+      { value: "shimmer", label: "Shimmer" }
+    ]
+  },
+  elevenlabs: {
+    eleven_multilingual_v2: [
+      { value: "default", label: "Default voice" }
+    ]
+  },
+  mock: {
+    mock: [{ value: "mock", label: "Mock voice" }]
+  }
+};
+
+function firstEnabled(options: SelectOption[] = [], fallback = "") {
+  return options.find((option) => !option.disabled)?.value ?? options[0]?.value ?? fallback;
+}
+
+function normalizeConfig(config: AIProviderConfig, modelMap: Record<string, SelectOption[]>) {
+  const provider = config.primaryProvider || "mock";
+  const models = modelMap[provider] ?? [];
+  const model = models.some((option) => option.value === config.model && !option.disabled)
+    ? config.model
+    : firstEnabled(models, config.model);
+
+  return { ...config, model };
+}
+
+function normalizeTtsConfig(config: AIProviderConfig) {
+  const normalized = normalizeConfig(config, TTS_MODELS);
+  const voiceOptions = TTS_VOICES[normalized.primaryProvider]?.[normalized.model] ?? [];
+  const voice = voiceOptions.some((option) => option.value === normalized.voice)
+    ? normalized.voice
+    : firstEnabled(voiceOptions, normalized.voice);
+
+  return { ...normalized, voice };
+}
+
 export function AIConfigPage() {
   const { token, user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
@@ -29,12 +162,13 @@ export function AIConfigPage() {
 
   const [llm, setLlm] = useState<AIProviderConfig>({ primaryProvider: "mock", fallbackChain: [], model: "", apiKeyRef: "", timeoutMs: 30000, stream: false });
   const [stt, setStt] = useState<AIProviderConfig>({ primaryProvider: "mock", fallbackChain: [], model: "", apiKeyRef: "", timeoutMs: 10000, language: "hi-IN" });
-  const [tts, setTts] = useState<AIProviderConfig>({ primaryProvider: "mock", fallbackChain: [], model: "", apiKeyRef: "", timeoutMs: 10000, voice: "shubh" });
+  const [tts, setTts] = useState<AIProviderConfig>({ primaryProvider: "mock", fallbackChain: [], model: "", apiKeyRef: "", timeoutMs: 10000, voice: "priya" });
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [health, setHealth] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -51,9 +185,9 @@ export function AIConfigPage() {
 
   function applyRecord(r: SettingsRecord) {
     setSelected(r);
-    setLlm(r.llmProviders ?? { primaryProvider: "mock", fallbackChain: [], model: "gpt-4o-mini", apiKeyRef: "OPENAI_API_KEY", timeoutMs: 30000, stream: false });
-    setStt(r.sttProviders ?? { primaryProvider: "mock", fallbackChain: [], model: "saaras:v3", apiKeyRef: "SARVAM_API_KEY", timeoutMs: 10000, language: "hi-IN" });
-    setTts(r.ttsProviders ?? { primaryProvider: "mock", fallbackChain: [], model: "bulbul:v3", apiKeyRef: "SARVAM_API_KEY", timeoutMs: 10000, voice: "shubh" });
+    setLlm(normalizeConfig(r.llmProviders ?? { primaryProvider: "mock", fallbackChain: [], model: "mock", apiKeyRef: "OPENAI_API_KEY", timeoutMs: 30000, stream: false }, LLM_MODELS));
+    setStt(normalizeConfig(r.sttProviders ?? { primaryProvider: "mock", fallbackChain: [], model: "mock", apiKeyRef: "SARVAM_API_KEY", timeoutMs: 10000, language: "hi-IN" }, STT_MODELS));
+    setTts(normalizeTtsConfig(r.ttsProviders ?? { primaryProvider: "mock", fallbackChain: [], model: "mock", apiKeyRef: "SARVAM_API_KEY", timeoutMs: 10000, voice: "mock" }));
     setSaved(false);
   }
 
@@ -75,7 +209,7 @@ export function AIConfigPage() {
         ...updated,
         llmProviders: { ...llm, stream: Boolean(llm.stream) },
         sttProviders: { ...stt, language: stt.language ?? "hi-IN" },
-        ttsProviders: { ...tts, voice: tts.voice ?? "shubh" },
+        ttsProviders: { ...tts, voice: tts.voice ?? "priya" },
       };
       setSelected(merged);
       setRecords((items) => items.map((item) => (item.doctorId === selected.doctorId ? merged : item)));
@@ -85,6 +219,21 @@ export function AIConfigPage() {
       setError(e instanceof Error ? e.message : "Save failed.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testProvider(service: "llm" | "stt" | "tts", config: AIProviderConfig) {
+    if (!token) return;
+    setHealth((h) => ({ ...h, [service]: "Checking provider..." }));
+
+    try {
+      const result = await checkProviderHealth(token, { service, ...config });
+      setHealth((h) => ({
+        ...h,
+        [service]: result.ok ? "Provider check passed" : `Provider warning: ${result.warnings.join(" ")}`
+      }));
+    } catch (e: unknown) {
+      setHealth((h) => ({ ...h, [service]: e instanceof Error ? e.message : "Provider check failed." }));
     }
   }
 
@@ -113,10 +262,14 @@ export function AIConfigPage() {
         {/* LLM Config */}
         <ConfigPanel 
           title="LLM Provider Logic" 
+          service="llm"
           config={llm} 
           setConfig={setLlm as any} 
           options={LLM_PROVIDERS} 
+          modelOptions={LLM_MODELS}
           isAdmin={isAdmin}
+          onTest={testProvider}
+          healthMessage={health.llm}
           extraFields={[
             { key: "stream", label: "Streaming Enabled", type: "checkbox" }
           ]}
@@ -125,10 +278,14 @@ export function AIConfigPage() {
         {/* STT Config */}
         <ConfigPanel 
           title="Speech-to-Text (STT)" 
+          service="stt"
           config={stt} 
           setConfig={setStt as any} 
           options={STT_PROVIDERS} 
+          modelOptions={STT_MODELS}
           isAdmin={isAdmin}
+          onTest={testProvider}
+          healthMessage={health.stt}
           extraFields={[
             { key: "language", label: "Language Code", type: "text" }
           ]}
@@ -137,12 +294,17 @@ export function AIConfigPage() {
         {/* TTS Config */}
         <ConfigPanel 
           title="Text-to-Speech (TTS)" 
+          service="tts"
           config={tts} 
           setConfig={setTts as any} 
           options={TTS_PROVIDERS} 
+          modelOptions={TTS_MODELS}
+          voiceOptions={TTS_VOICES}
           isAdmin={isAdmin}
+          onTest={testProvider}
+          healthMessage={health.tts}
           extraFields={[
-            { key: "voice", label: "Voice ID", type: "text" }
+            { key: "voice", label: "Voice ID", type: "voice-select" }
           ]}
         />
 
@@ -163,22 +325,65 @@ export function AIConfigPage() {
   );
 }
 
-function ConfigPanel({ title, config, setConfig, options, isAdmin, extraFields }: any) {
+function ConfigPanel({ title, service, config, setConfig, options, modelOptions, voiceOptions, isAdmin, extraFields, onTest, healthMessage }: any) {
+  const currentModelOptions: SelectOption[] = modelOptions?.[config.primaryProvider] ?? [];
+  const currentVoiceOptions: SelectOption[] = voiceOptions?.[config.primaryProvider]?.[config.model] ?? [];
+
+  function updateProvider(nextProvider: string) {
+    const nextModel = firstEnabled(modelOptions?.[nextProvider] ?? [], "");
+    const nextVoice = firstEnabled(voiceOptions?.[nextProvider]?.[nextModel] ?? [], "");
+
+    setConfig({
+      ...config,
+      primaryProvider: nextProvider,
+      model: nextModel,
+      apiKeyRef: nextProvider === "openai"
+        ? "OPENAI_API_KEY"
+        : nextProvider === "claude"
+          ? "ANTHROPIC_API_KEY"
+          : nextProvider === "sarvam"
+            ? "SARVAM_API_KEY"
+            : config.apiKeyRef,
+      ...(nextVoice ? { voice: nextVoice } : {})
+    });
+  }
+
+  function updateModel(nextModel: string) {
+    const nextVoice = firstEnabled(voiceOptions?.[config.primaryProvider]?.[nextModel] ?? [], config.voice);
+    setConfig({ ...config, model: nextModel, ...(nextVoice ? { voice: nextVoice } : {}) });
+  }
+
   return (
     <Card>
-      <CardHeader title={title} subtitle="Set primary engines and fallback chains" />
+      <CardHeader
+        title={title}
+        subtitle="Set primary engines and fallback chains"
+        action={isAdmin ? (
+          <Button variant="secondary" size="sm" onClick={() => onTest(service, config)}>
+            Test Provider
+          </Button>
+        ) : undefined}
+      />
       <div className="space-y-4">
+        {healthMessage && (
+          <p className={`text-xs ${String(healthMessage).includes("passed") ? "text-emerald-600" : "text-amber-600"}`}>
+            {healthMessage}
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1.5">Primary Provider</label>
             <select
               disabled={!isAdmin}
               value={config.primaryProvider}
-              onChange={(e) => setConfig({ ...config, primaryProvider: e.target.value })}
+              onChange={(e) => updateProvider(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
             >
-              {options.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+              {options.map((opt: string) => <option key={opt} value={opt}>{PROVIDER_LABELS[opt] ?? opt}</option>)}
             </select>
+            {currentModelOptions.some((opt) => opt.value === config.model && opt.disabled) && (
+              <p className="text-[11px] text-amber-600 mt-1">This model is listed but not supported by the current backend transport.</p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1.5">Fallback Chain</label>
@@ -196,14 +401,16 @@ function ConfigPanel({ title, config, setConfig, options, isAdmin, extraFields }
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1.5">Model</label>
-            <input
-              type="text"
+            <select
               disabled={!isAdmin}
               value={config.model}
-              onChange={(e) => setConfig({ ...config, model: e.target.value })}
-              placeholder="gpt-4o-mini"
+              onChange={(e) => updateModel(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
-            />
+            >
+              {currentModelOptions.map((opt) => (
+                <option key={opt.value} value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1.5">API Key Ref (Secret Name)</label>
@@ -241,6 +448,17 @@ function ConfigPanel({ title, config, setConfig, options, isAdmin, extraFields }
                   onChange={(e) => setConfig({ ...config, [f.key]: e.target.checked })}
                   className="mt-2"
                 />
+              ) : f.type === "voice-select" ? (
+                <select
+                  disabled={!isAdmin || currentVoiceOptions.length === 0}
+                  value={(config[f.key] as string) ?? ""}
+                  onChange={(e) => setConfig({ ...config, [f.key]: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                >
+                  {currentVoiceOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value} disabled={opt.disabled}>{opt.label}</option>
+                  ))}
+                </select>
               ) : (
                 <input
                   type="text"
