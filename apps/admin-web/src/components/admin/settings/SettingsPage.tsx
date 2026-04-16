@@ -6,6 +6,20 @@ import { Button } from "../../ui/Button";
 import { PageLoader } from "../../ui/Spinner";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const DEFAULT_AVAILABILITY = [
+  { day: "Monday", start: "09:00", end: "17:00", blocked: false, leave: false },
+  { day: "Tuesday", start: "09:00", end: "17:00", blocked: false, leave: false },
+  { day: "Wednesday", start: "09:00", end: "17:00", blocked: false, leave: false },
+  { day: "Thursday", start: "09:00", end: "17:00", blocked: false, leave: false },
+  { day: "Friday", start: "09:00", end: "17:00", blocked: false, leave: false },
+  { day: "Saturday", start: "10:00", end: "14:00", blocked: false, leave: false },
+];
+
+type AvailabilitySlot = SettingsRecord["availability"][number];
+
+function normalizeAvailability(slots: SettingsRecord["availability"] | undefined): AvailabilitySlot[] {
+  return slots && slots.length > 0 ? slots : DEFAULT_AVAILABILITY;
+}
 
 export function SettingsPage() {
   const { token, user } = useAuth();
@@ -28,7 +42,7 @@ export function SettingsPage() {
       setRecords(data);
       if (data.length > 0) {
         setSelected(data[0]);
-        setForm(data[0]);
+        setForm({ ...data[0], availability: normalizeAvailability(data[0].availability) });
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load settings.");
@@ -41,7 +55,7 @@ export function SettingsPage() {
 
   function selectRecord(r: SettingsRecord) {
     setSelected(r);
-    setForm(r);
+    setForm({ ...r, availability: normalizeAvailability(r.availability) });
     setSaved(false);
   }
 
@@ -63,9 +77,31 @@ export function SettingsPage() {
   }
 
   function updateAvailability(index: number, field: string, value: string | boolean) {
-    const avail = [...(form.availability ?? [])];
+    const avail = [...normalizeAvailability(form.availability)];
     avail[index] = { ...avail[index], [field]: value };
     setForm((f) => ({ ...f, availability: avail }));
+  }
+
+  function addAvailabilityDay() {
+    const current = normalizeAvailability(form.availability);
+    const nextDay = DAYS.find((day) => !current.some((slot) => slot.day === day));
+    if (!nextDay) return;
+    setForm((f) => ({
+      ...f,
+      availability: [
+        ...current,
+        { day: nextDay, start: "09:00", end: "17:00", blocked: false, leave: false }
+      ]
+    }));
+  }
+
+  function deleteAvailability(index: number) {
+    const current = normalizeAvailability(form.availability);
+    setForm((f) => ({ ...f, availability: current.filter((_, itemIndex) => itemIndex !== index) }));
+  }
+
+  function resetDefaultAvailability() {
+    setForm((f) => ({ ...f, availability: DEFAULT_AVAILABILITY }));
   }
 
   if (loading) return <PageLoader />;
@@ -127,10 +163,20 @@ export function SettingsPage() {
         </Card>
       </div>
 
-      {/* Business Hours / Availability */}
-      {form.availability && form.availability.length > 0 && (
-        <Card>
-          <CardHeader title="Business Hours" subtitle="Set availability per day" />
+      <Card>
+        <CardHeader
+          title="Business Hours"
+          subtitle="Add, edit, block, or remove doctor availability"
+          action={canEdit ? (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" onClick={resetDefaultAvailability}>Use Default Hours</Button>
+              <Button variant="primary" size="sm" onClick={addAvailabilityDay} disabled={normalizeAvailability(form.availability).length >= DAYS.length}>Add Day</Button>
+            </div>
+          ) : undefined}
+        />
+        {normalizeAvailability(form.availability).length === 0 ? (
+          <p className="text-sm text-slate-400">No business hours configured.</p>
+        ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -139,13 +185,23 @@ export function SettingsPage() {
                   <th className="text-left text-xs font-semibold text-slate-500 pb-2 pr-4">Start</th>
                   <th className="text-left text-xs font-semibold text-slate-500 pb-2 pr-4">End</th>
                   <th className="text-left text-xs font-semibold text-slate-500 pb-2 pr-4">Blocked</th>
-                  <th className="text-left text-xs font-semibold text-slate-500 pb-2">Leave</th>
+                  <th className="text-left text-xs font-semibold text-slate-500 pb-2 pr-4">Leave</th>
+                  <th className="text-right text-xs font-semibold text-slate-500 pb-2">Action</th>
                 </tr>
               </thead>
               <tbody className="space-y-1">
-                {form.availability.map((slot, i) => (
+                {normalizeAvailability(form.availability).map((slot, i) => (
                   <tr key={slot.day} className="border-b border-slate-50">
-                    <td className="py-2 pr-4 font-medium text-slate-700 whitespace-nowrap">{slot.day}</td>
+                    <td className="py-2 pr-4 font-medium text-slate-700 whitespace-nowrap">
+                      <select
+                        disabled={!canEdit}
+                        value={slot.day}
+                        onChange={(e) => updateAvailability(i, "day", e.target.value)}
+                        className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                      >
+                        {DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
+                      </select>
+                    </td>
                     <td className="py-2 pr-4">
                       <input
                         type="time" disabled={!canEdit}
@@ -178,13 +234,16 @@ export function SettingsPage() {
                         className="w-4 h-4 accent-amber-500"
                       />
                     </td>
+                    <td className="py-2 text-right">
+                      <Button variant="ghost" size="sm" disabled={!canEdit} onClick={() => deleteAvailability(i)}>Delete</Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </Card>
-      )}
+        )}
+      </Card>
 
       {/* Save Bar */}
       {canEdit && (

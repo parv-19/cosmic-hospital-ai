@@ -9,6 +9,11 @@ export type BookingStage =
   | "waiting_for_mobile"
   | "waiting_for_patient_type"
   | "confirming"
+  | "reschedule_waiting_for_new_day"
+  | "reschedule_waiting_for_new_slot"
+  | "reschedule_confirming"
+  | "rescheduled"
+  | "cancel_confirming"
   | "booked"
   | "cancelled"
   | "fallback";
@@ -33,6 +38,30 @@ export type UsageLedgerEntry = {
   createdAt: string;
 };
 
+export type ConversationMemory = {
+  lastDoctor?: string | null;
+  lastDay?: string | null;
+  lastSuggestedSlots?: string[];
+  silenceRetries?: number;
+  callerSeenBefore?: boolean;
+};
+
+export type SessionAppointmentSnapshot = {
+  id?: string;
+  appointmentId?: string;
+  patientName?: string;
+  phoneNumber?: string;
+  appointmentDate?: string;
+  reason?: string;
+  status?: string;
+  doctorId?: string | null;
+  doctorName?: string | null;
+};
+
+export type RescheduleSlotSelection = {
+  time: string;
+};
+
 export type DemoSessionRecord = {
   sessionId: string;
   callerNumber: string;
@@ -46,6 +75,18 @@ export type DemoSessionRecord = {
   patientName: string | null;
   patientType: string | null;
   contactNumber: string | null;
+  bookingContactConfirmed?: boolean;
+  bookingContactConfirmationPending?: boolean;
+  availabilityCheckKey?: string | null;
+  availabilityOfferedDate?: string | null;
+  availabilityOfferedTime?: string | null;
+  availabilityOfferedSlots?: string[];
+  conversationMemory?: ConversationMemory;
+  reschedule_existing?: SessionAppointmentSnapshot | null;
+  reschedule_new_day?: string | null;
+  reschedule_available_slots?: string[];
+  reschedule_confirmed_slot?: RescheduleSlotSelection | null;
+  cancel_booking?: SessionAppointmentSnapshot | null;
   bookingResult: string | null;
   latestIntent: string | null;
   fallbackAttempts: number;

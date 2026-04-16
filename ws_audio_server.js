@@ -651,7 +651,7 @@ async function finalizeCurrentUtterance(state, reason) {
         state.demoTurnIndex += 1;
         state.lastProcessedAt = Date.now();
 
-        if (botResponse?.data?.stage === 'booked' || botResponse?.data?.stage === 'cancelled') {
+        if (botResponse?.data?.stage === 'booked' || botResponse?.data?.stage === 'cancelled' || botResponse?.data?.stage === 'rescheduled') {
             state.demoCompleted = true;
         }
 

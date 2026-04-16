@@ -1,5 +1,18 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { fetchDashboard, fetchCalls, fetchSettings, fetchTranscript, type DashboardResponse, type CallRecord, type SettingsRecord, type TranscriptEntry } from "../../../api";
+import {
+  fetchAppointments,
+  fetchDashboard,
+  fetchCalls,
+  fetchDoctors,
+  fetchSettings,
+  fetchTranscript,
+  type AppointmentRecord,
+  type CallRecord,
+  type DashboardResponse,
+  type DoctorRecord,
+  type SettingsRecord,
+  type TranscriptEntry
+} from "../../../api";
 import { useAuth } from "../../../context/AuthContext";
 import { StatCard } from "../../ui/StatCard";
 import { Card, CardHeader } from "../../ui/Card";
@@ -8,6 +21,7 @@ import { Badge, outcomeVariant } from "../../ui/Badge";
 import { Modal } from "../../ui/Modal";
 import { PageLoader } from "../../ui/Spinner";
 import { Button } from "../../ui/Button";
+import { getDayNameFromDateInput, getSlotSummary } from "../../../utils/slot-visibility";
 
 function fmtDuration(s: number) {
   if (!s) return "—";
@@ -17,6 +31,66 @@ function fmtDuration(s: number) {
 function fmtDate(d: string) {
   if (!d) return "—";
   return new Date(d).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" });
+}
+
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const MONTHS = [
+  ["january", "jan"],
+  ["february", "feb"],
+  ["march", "mar"],
+  ["april", "apr"],
+  ["may"],
+  ["june", "jun"],
+  ["july", "jul"],
+  ["august", "aug"],
+  ["september", "sept", "sep"],
+  ["october", "oct"],
+  ["november", "nov"],
+  ["december", "dec"]
+];
+
+function parseExplicitAppointmentDate(raw: string) {
+  const normalized = raw.toLowerCase().replace(/(\d+)(st|nd|rd|th)\b/g, "$1").replace(/,/g, " ");
+  for (let month = 0; month < MONTHS.length; month += 1) {
+    for (const name of MONTHS[month]) {
+      const beforeDay = normalized.match(new RegExp(`\\b(\\d{1,2})\\s+${name}(?:\\s+(\\d{4}))?\\b`, "i"));
+      const afterDay = normalized.match(new RegExp(`\\b${name}\\s+(\\d{1,2})(?:\\s+(\\d{4}))?\\b`, "i"));
+      const match = beforeDay ?? afterDay;
+      if (!match?.[1]) continue;
+      const year = Number(match[2] ?? new Date().getFullYear());
+      const date = new Date(year, month, Number(match[1]));
+      if (date.getFullYear() === year && date.getMonth() === month && date.getDate() === Number(match[1])) {
+        return date;
+      }
+    }
+  }
+  return null;
+}
+
+function fmtAppointmentTarget(call: CallRecord) {
+  const raw = (call.appointmentDate ?? [call.preferredDate, call.preferredTime].filter(Boolean).join(" ")).trim();
+  if (!raw) return "—";
+
+  const time = call.preferredTime ?? raw.match(/\b\d{1,2}(?::\d{2})?\s*(?:AM|PM)\b/i)?.[0] ?? "";
+  const explicitDate = parseExplicitAppointmentDate(raw);
+  if (explicitDate) {
+    const dateLabel = explicitDate.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+    return `${dateLabel}${time ? `, ${time}` : ""}`;
+  }
+
+  const lower = raw.toLowerCase();
+  const dayIndex = WEEKDAYS.findIndex((day) => lower.includes(day));
+
+  if (dayIndex >= 0 && call.startedAt) {
+    const started = new Date(call.startedAt);
+    const target = new Date(started);
+    const daysAhead = (dayIndex - started.getDay() + 7) % 7 || 7;
+    target.setDate(started.getDate() + daysAhead);
+    const dateLabel = target.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+    return `${dateLabel}${time ? `, ${time}` : ""}`;
+  }
+
+  return raw;
 }
 
 function fmtMoney(value: number | null | undefined) {
@@ -46,6 +120,8 @@ export function DashboardPage() {
   const { token, user } = useAuth();
   const [stats, setStats]   = useState<DashboardResponse | null>(null);
   const [calls, setCalls]   = useState<CallRecord[]>([]);
+  const [doctors, setDoctors] = useState<DoctorRecord[]>([]);
+  const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
   const [dateFilter, setDateFilter] = useState(() => toDateInputValue(new Date()));
   const [costDisplay, setCostDisplay] = useState(DEFAULT_COST_DISPLAY);
   const [loading, setLoading] = useState(true);
@@ -59,10 +135,18 @@ export function DashboardPage() {
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      const [d, c, settings] = await Promise.all([fetchDashboard(token), fetchCalls(token), fetchSettings(token)]);
+      const [d, c, settings, doctorList, appointmentList] = await Promise.all([
+        fetchDashboard(token),
+        fetchCalls(token),
+        fetchSettings(token),
+        fetchDoctors(token),
+        fetchAppointments(token),
+      ]);
       setStats(d);
       const firstSettings = settings[0] as SettingsRecord | undefined;
       setCostDisplay({ ...DEFAULT_COST_DISPLAY, ...(firstSettings?.costDisplay ?? {}) });
+      setDoctors(doctorList);
+      setAppointments(appointmentList);
       setCalls(c.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load dashboard.");
@@ -91,6 +175,10 @@ export function DashboardPage() {
 
   const totals = stats?.totals;
   const filteredCalls = calls.filter((call) => recordMatchesDate(call, dateFilter));
+  const slotDay = getDayNameFromDateInput(dateFilter);
+  const slotSummaries = doctors
+    .filter((doctor) => doctor.active)
+    .map((doctor) => ({ doctor, summary: getSlotSummary(doctor, appointments, slotDay, dateFilter) }));
 
   return (
     <div className="space-y-6">
@@ -152,6 +240,77 @@ export function DashboardPage() {
         </Card>
       )}
 
+      {/* Slot visibility */}
+      <Card>
+        <CardHeader
+          title="Slot Visibility"
+          subtitle={`${slotDay} availability from doctor hours and booked appointments`}
+        />
+        {slotSummaries.length === 0 ? (
+          <p className="text-sm text-slate-400">No active doctors found.</p>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {slotSummaries.map(({ doctor, summary }) => (
+              <div key={doctor.doctorId} className="border border-slate-200 rounded-lg p-4 bg-white">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{doctor.name}</p>
+                    <p className="text-xs text-slate-500">{doctor.specialization || doctor.specialty || "Doctor"}</p>
+                  </div>
+                  <Badge variant={summary.availableSlots.length > 0 ? "success" : "warning"}>
+                    {summary.availableSlots.length > 0 ? "Slots open" : summary.unavailableReason ?? "Full"}
+                  </Badge>
+                </div>
+
+                <div className="mt-3">
+                  <p className="text-[11px] font-semibold uppercase text-slate-400 mb-1">Available</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {summary.availableSlots.length > 0 ? (
+                      summary.availableSlots.slice(0, 8).map((slot) => (
+                        <span key={slot} className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700">
+                          {slot}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-500">
+                        No open slot
+                      </span>
+                    )}
+                    {summary.availableSlots.length > 8 && (
+                      <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-500">
+                        +{summary.availableSlots.length - 8} more
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <p className="text-[11px] font-semibold uppercase text-slate-400 mb-1">Booked</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {summary.bookedSlots.length > 0 ? (
+                      summary.bookedSlots.slice(0, 6).map((slot) => (
+                        <span key={`${slot.time}-${slot.patientName}`} className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                          {slot.time} · {slot.patientName}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-500">
+                        No booking
+                      </span>
+                    )}
+                    {summary.bookedSlots.length > 6 && (
+                      <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-500">
+                        +{summary.bookedSlots.length - 6} more
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       {/* Calls */}
       <Card>
         <CardHeader
@@ -184,6 +343,10 @@ export function DashboardPage() {
             {
               key: "outcome", header: "Outcome",
               render: (r) => <Badge variant={outcomeVariant(r.outcome as string)}>{r.outcome as string || "—"}</Badge>,
+            },
+            {
+              key: "appointmentDate", header: "Appointment",
+              render: (r) => <span className="text-slate-700 text-xs">{fmtAppointmentTarget(r as unknown as CallRecord)}</span>,
             },
             {
               key: "selectedDoctor", header: "Doctor",

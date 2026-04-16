@@ -21,6 +21,66 @@ function fmtMoney(value: number | null | undefined) {
   return `₹${Number(value ?? 0).toFixed(4)}`;
 }
 
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const MONTHS = [
+  ["january", "jan"],
+  ["february", "feb"],
+  ["march", "mar"],
+  ["april", "apr"],
+  ["may"],
+  ["june", "jun"],
+  ["july", "jul"],
+  ["august", "aug"],
+  ["september", "sept", "sep"],
+  ["october", "oct"],
+  ["november", "nov"],
+  ["december", "dec"]
+];
+
+function parseExplicitAppointmentDate(raw: string) {
+  const normalized = raw.toLowerCase().replace(/(\d+)(st|nd|rd|th)\b/g, "$1").replace(/,/g, " ");
+  for (let month = 0; month < MONTHS.length; month += 1) {
+    for (const name of MONTHS[month]) {
+      const beforeDay = normalized.match(new RegExp(`\\b(\\d{1,2})\\s+${name}(?:\\s+(\\d{4}))?\\b`, "i"));
+      const afterDay = normalized.match(new RegExp(`\\b${name}\\s+(\\d{1,2})(?:\\s+(\\d{4}))?\\b`, "i"));
+      const match = beforeDay ?? afterDay;
+      if (!match?.[1]) continue;
+      const year = Number(match[2] ?? new Date().getFullYear());
+      const date = new Date(year, month, Number(match[1]));
+      if (date.getFullYear() === year && date.getMonth() === month && date.getDate() === Number(match[1])) {
+        return date;
+      }
+    }
+  }
+  return null;
+}
+
+function fmtAppointmentTarget(call: CallRecord) {
+  const raw = (call.appointmentDate ?? [call.preferredDate, call.preferredTime].filter(Boolean).join(" ")).trim();
+  if (!raw) return "—";
+
+  const time = call.preferredTime ?? raw.match(/\b\d{1,2}(?::\d{2})?\s*(?:AM|PM)\b/i)?.[0] ?? "";
+  const explicitDate = parseExplicitAppointmentDate(raw);
+  if (explicitDate) {
+    const dateLabel = explicitDate.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+    return `${dateLabel}${time ? `, ${time}` : ""}`;
+  }
+
+  const lower = raw.toLowerCase();
+  const dayIndex = WEEKDAYS.findIndex((day) => lower.includes(day));
+
+  if (dayIndex >= 0 && call.startedAt) {
+    const started = new Date(call.startedAt);
+    const target = new Date(started);
+    const daysAhead = (dayIndex - started.getDay() + 7) % 7 || 7;
+    target.setDate(started.getDate() + daysAhead);
+    const dateLabel = target.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+    return `${dateLabel}${time ? `, ${time}` : ""}`;
+  }
+
+  return raw;
+}
+
 function toDateInputValue(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -41,9 +101,9 @@ const DEFAULT_COST_DISPLAY = {
 };
 
 function exportCSV(calls: CallRecord[]) {
-  const headers = ["Session ID", "Caller", "Outcome", "Doctor", "Duration (s)", "Started At"];
+  const headers = ["Session ID", "Caller", "Outcome", "Appointment", "Doctor", "Duration (s)", "Started At"];
   const rows = calls.map((c) => [
-    c.sessionId, c.callerNumber, c.outcome, c.selectedDoctor ?? "", c.durationSeconds, c.startedAt,
+    c.sessionId, c.callerNumber, c.outcome, fmtAppointmentTarget(c), c.selectedDoctor ?? "", c.durationSeconds, c.startedAt,
   ]);
   const csv = [headers, ...rows].map((r) => r.map(String).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
@@ -201,6 +261,10 @@ export function CallLogsPage() {
               render: (r) => <span className="text-slate-600 text-sm">{(r.selectedDoctor as string) || "—"}</span>,
             },
             {
+              key: "appointmentDate", header: "Appointment",
+              render: (r) => <span className="text-slate-700 text-xs">{fmtAppointmentTarget(r as unknown as CallRecord)}</span>,
+            },
+            {
               key: "selectedSpecialization", header: "Specialty",
               render: (r) => <span className="text-slate-500 text-xs">{(r.selectedSpecialization as string) || "—"}</span>,
             },
@@ -255,6 +319,10 @@ export function CallLogsPage() {
             <span className="text-xs text-slate-500">
               <span className="font-medium text-slate-700">Doctor: </span>
               {selected.selectedDoctor || "—"}
+            </span>
+            <span className="text-xs text-slate-500">
+              <span className="font-medium text-slate-700">Appointment: </span>
+              {fmtAppointmentTarget(selected)}
             </span>
             <Badge variant={outcomeVariant(selected.outcome)}>{selected.outcome || "—"}</Badge>
             <span className="text-xs text-slate-500">

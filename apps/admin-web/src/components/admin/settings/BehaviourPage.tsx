@@ -14,6 +14,15 @@ export function BehaviourPage() {
   const [transferNumber, setTransferNumber] = useState("");
   const [fallbackResponse, setFallbackResponse] = useState("");
   const [fallbackPolicy, setFallbackPolicy] = useState<SettingsRecord["fallbackPolicy"]>("ask_again");
+  const [intelligenceSettings, setIntelligenceSettings] = useState({
+    enabled: true,
+    askOnlyMissingFields: true,
+    callerNumberConfirmation: true,
+    languageNormalization: true,
+    smartClarification: true,
+    availabilityFirst: true,
+    confidenceThreshold: 0.7,
+  });
   const [costDisplay, setCostDisplay] = useState({
     showSttCost: true,
     showTtsCost: true,
@@ -47,6 +56,15 @@ export function BehaviourPage() {
     setTransferNumber(r.transferNumber ?? "");
     setFallbackResponse(r.fallbackResponse ?? "");
     setFallbackPolicy(r.fallbackPolicy ?? "ask_again");
+    setIntelligenceSettings({
+      enabled: r.intelligenceSettings?.enabled ?? true,
+      askOnlyMissingFields: r.intelligenceSettings?.askOnlyMissingFields ?? true,
+      callerNumberConfirmation: r.intelligenceSettings?.callerNumberConfirmation ?? true,
+      languageNormalization: r.intelligenceSettings?.languageNormalization ?? true,
+      smartClarification: r.intelligenceSettings?.smartClarification ?? true,
+      availabilityFirst: r.intelligenceSettings?.availabilityFirst ?? true,
+      confidenceThreshold: r.intelligenceSettings?.confidenceThreshold ?? 0.7,
+    });
     setCostDisplay({
       showSttCost: r.costDisplay?.showSttCost ?? true,
       showTtsCost: r.costDisplay?.showTtsCost ?? true,
@@ -70,6 +88,7 @@ export function BehaviourPage() {
         transferNumber,
         fallbackResponse,
         fallbackPolicy,
+        intelligenceSettings,
         costDisplay,
         supportedIntents,
       });
@@ -166,6 +185,48 @@ export function BehaviourPage() {
                 value={fallbackResponse}
                 onChange={(e) => setFallbackResponse(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none disabled:opacity-50"
+              />
+            </div>
+          </div>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader title="Intent Intelligence" subtitle="Safe deterministic understanding before the bot asks the next question" />
+          <div className="divide-y divide-slate-100">
+            {[
+              ["enabled", "Enable smart intent layer", "Extract doctor, day, time, name, number, and patient type before asking again"],
+              ["askOnlyMissingFields", "Ask only missing fields", "Skip doctor/date/time questions when already understood"],
+              ["callerNumberConfirmation", "Confirm current caller number", "Ask permission to use ANI before requesting manual mobile entry"],
+              ["languageNormalization", "Hindi/Hinglish normalization", "Use known Hindi, English, and mixed-language aliases"],
+              ["availabilityFirst", "Check slots before details", "Use business hours and booked appointments before collecting patient details"],
+              ["smartClarification", "Prefer confirmation over repetition", "Keep room for safer confirmation prompts as confidence improves"],
+            ].map(([key, label, description]) => (
+              <div key={key} className="flex items-center justify-between py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-700">{label}</p>
+                  <p className="text-xs text-slate-400">{description}</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!isAdmin}
+                  onClick={() => setIntelligenceSettings((current) => ({ ...current, [key]: !current[key as keyof typeof current] }))}
+                  className={`relative w-12 h-6 rounded-full transition-all duration-200 focus:outline-none ${intelligenceSettings[key as keyof typeof intelligenceSettings] ? "bg-indigo-600" : "bg-slate-300"} disabled:opacity-50`}
+                >
+                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all duration-200 ${intelligenceSettings[key as keyof typeof intelligenceSettings] ? "left-6" : "left-0.5"}`} />
+                </button>
+              </div>
+            ))}
+            <div className="py-3">
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Auto-accept confidence threshold</label>
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                disabled={!isAdmin}
+                value={intelligenceSettings.confidenceThreshold}
+                onChange={(e) => setIntelligenceSettings((current) => ({ ...current, confidenceThreshold: Number(e.target.value) }))}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
               />
             </div>
           </div>

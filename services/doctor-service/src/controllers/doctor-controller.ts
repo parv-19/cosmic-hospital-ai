@@ -77,26 +77,33 @@ export class DoctorController {
   };
 
   createDoctor = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    const { name, specialization, fee, clinicName, language, scheduleLabel, contactNumber } = req.body as Record<string, string | number | undefined>;
+    const { name, specialization, fee, clinicName, language, scheduleLabel, contactNumber, email, password } = req.body as Record<string, string | number | undefined>;
 
     if (!name || !specialization || typeof fee !== "number" || !clinicName) {
       sendError(res, "name, specialization, fee, and clinicName are required.", 400);
       return;
     }
 
-    sendSuccess(
-      res,
-      await this.doctorService.createDoctor({
+    if ((email && !password) || (!email && password)) {
+      sendError(res, "email and password must be provided together.", 400);
+      return;
+    }
+
+    try {
+      sendSuccess(res, await this.doctorService.createDoctor({
         name: String(name),
         specialization: String(specialization),
         fee,
         clinicName: String(clinicName),
         language: typeof language === "string" ? language : undefined,
         scheduleLabel: typeof scheduleLabel === "string" ? scheduleLabel : undefined,
-        contactNumber: typeof contactNumber === "string" ? contactNumber : undefined
-      }),
-      201
-    );
+        contactNumber: typeof contactNumber === "string" ? contactNumber : undefined,
+        email: typeof email === "string" ? email : undefined,
+        password: typeof password === "string" ? password : undefined
+      }), 201);
+    } catch (error) {
+      sendError(res, error instanceof Error ? error.message : "Failed to create doctor.", 400);
+    }
   };
 
   updateDoctor = async (req: AuthenticatedRequest, res: Response): Promise<void> => {

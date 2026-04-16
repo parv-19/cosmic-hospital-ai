@@ -34,9 +34,10 @@ export function Badge({ variant = "neutral", children, dot = false, className = 
 /** Maps common call outcomes → variant */
 export function outcomeVariant(outcome: string): Variant {
   const o = outcome?.toLowerCase() ?? "";
+  if (o.includes("rescheduled") || o.includes("reschedule")) return "warning";
   if (o.includes("booked") || o.includes("success")) return "success";
   if (o.includes("transfer")) return "info";
-  if (o.includes("fail") || o.includes("abandon") || o.includes("error")) return "danger";
+  if (o.includes("fail") || o.includes("abandon") || o.includes("error") || o.includes("cancel")) return "danger";
   if (o.includes("active") || o.includes("live")) return "live";
   return "neutral";
 }

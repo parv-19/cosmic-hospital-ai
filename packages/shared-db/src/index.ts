@@ -89,6 +89,15 @@ const doctorBotSettingsSchema = new Schema(
     bookingEnabled: { type: Boolean, default: true },
     emergencyMessage: { type: String, required: true },
     fallbackPolicy: { type: String, enum: ["ask_again", "transfer", "end_call", "create_callback"], default: "ask_again" },
+    intelligenceSettings: {
+      enabled: { type: Boolean, default: true },
+      askOnlyMissingFields: { type: Boolean, default: true },
+      callerNumberConfirmation: { type: Boolean, default: true },
+      languageNormalization: { type: Boolean, default: true },
+      smartClarification: { type: Boolean, default: true },
+      availabilityFirst: { type: Boolean, default: true },
+      confidenceThreshold: { type: Number, default: 0.7 }
+    },
     costDisplay: {
       showSttCost: { type: Boolean, default: true },
       showTtsCost: { type: Boolean, default: true },
@@ -119,6 +128,61 @@ const doctorBotSettingsSchema = new Schema(
       },
       transferMessage: { type: String, default: "I will transfer you to reception at the configured clinic number." },
       goodbyeMessage: { type: String, default: "Thank you for calling. Goodbye." },
+      confirmRememberedDoctor: { type: String, default: "{{doctor}} ke liye hi booking karni hai na?" },
+      confirmRememberedDay: { type: String, default: "{{day}} ke liye hi dekhna hai?" },
+      callerNumberConfirmation: { type: String, default: "Booking ke liye yahi current number use kar loon? {{maskedNumber}}." },
+      callerReuseConfirmation: { type: String, default: "Pichli baar wali contact details use kar loon? {{maskedNumber}}." },
+      silenceRetryWithSlots: { type: String, default: "Aap {{slotChoices}} mein se choose kar sakte hain. Main wait kar rahi hoon." },
+      silenceRetryDate: { type: String, default: "{{day}} hi rakhna hai ya koi aur din? Main wait kar rahi hoon." },
+      silenceRetryDoctor: { type: String, default: "{{doctor}} ke liye hi booking karni hai na?" },
+      silenceRetryGeneric: { type: String, default: "{{stagePrompt}} Main wait kar rahi hoon." },
+      recoverySpecialization: { type: String, default: "Doctor ya department clear nahi aaya. {{specializations}} mein se bata dijiye." },
+      recoveryTimeWithSlots: { type: String, default: "Time confirm karna tha. {{slotChoices}} mein se kaunsa rakh doon?" },
+      recoveryTimeGeneric: { type: String, default: "Time confirm karna tha. Morning chahte hain ya afternoon?" },
+      recoveryDateWithMemory: { type: String, default: "{{day}} hi rakhna hai, ya koi aur din?" },
+      recoveryDateGeneric: { type: String, default: "Din confirm karna tha. Kis din ka appointment chahiye?" },
+      recoveryDoctorWithMemory: { type: String, default: "{{doctor}} ke liye hi booking karni hai na?" },
+      recoveryPatientName: { type: String, default: "Naam clear nahi aaya. Kis naam se booking karoon?" },
+      recoveryMobile: { type: String, default: "Mobile number clear nahi aaya. Ek baar number bata dijiye." },
+      recoveryConfirmation: { type: String, default: "Confirm karna tha. Details sahi hain?" },
+      availabilityExactSlotAvailable: { type: String, default: "{{time}} ka slot available hai." },
+      availabilitySlotAvailable: { type: String, default: "{{day}} {{timeContext}}{{slot}} ka slot available hai." },
+      availabilityTimeFull: { type: String, default: "{{requestedTime}} available nahi hai. {{alternativeFrame}}. Kaunsa rakh doon?" },
+      availabilityAlternativeSameBucket: { type: String, default: "{{slot1}} aur {{slot2}} available hain" },
+      availabilityAlternativeDifferentBucket: { type: String, default: "{{slot1}} {{bucket1}} mein hai aur {{slot2}} thoda baad mein hoga" },
+      availabilityDayUnavailableWithNext: {
+        type: String,
+        default: "{{day}} ko doctor available nahi hain. {{nextDay}} mein {{slotPreview}} mil sakta hai. {{nextDay}} dekh loon?"
+      },
+      availabilityDayUnavailableNoNext: { type: String, default: "{{day}} ko doctor available nahi hain. Kisi aur doctor ka slot dekh loon?" },
+      availabilitySlotsFullWithNext: {
+        type: String,
+        default: "{{day}} ke slots full hain. {{nextDay}} mein {{slotPreview}} mil sakta hai. Wahi dekh loon?"
+      },
+      availabilitySlotsFullNoNext: { type: String, default: "{{day}} ke slots full hain. Kisi aur doctor ka slot dekh loon?" },
+      availabilityBookingDisabled: {
+        type: String,
+        default: "{{doctor}} ke liye booking abhi reception se confirm hogi. Main connect kar sakti hoon."
+      },
+      rescheduleNoActiveBooking: { type: String, default: "Is number par koi active appointment nahi mili. Nayi appointment book karni ho to bata dijiye." },
+      rescheduleFoundBooking: { type: String, default: "Aapki booking {{appointment}} ke liye hai. Kis din reschedule karna hai?" },
+      rescheduleAskNewDay: { type: String, default: "Kis din reschedule karna hai? Monday se Sunday mein se din bata dijiye." },
+      rescheduleMissingBooking: { type: String, default: "Active booking ki doctor details clear nahi mili. Reception se confirm karna padega." },
+      rescheduleBookingDisabled: { type: String, default: "{{doctor}} ke liye reschedule abhi reception se confirm hoga. Main reception se connect kar sakti hoon." },
+      rescheduleSlotsAvailable: { type: String, default: "{{availabilityReply}} {{slotChoices}} mein se kaunsa slot rakh doon?" },
+      rescheduleAskSlot: { type: String, default: "{{slotChoices}} mein se kaunsa slot rakh doon?" },
+      rescheduleConfirm: { type: String, default: "{{day}} {{slot}} par Dr. {{doctor}} ke saath reschedule kar doon?" },
+      rescheduleFinal: {
+        type: String,
+        default: "Ho gaya. Aapki appointment {{day}} {{slot}} par Dr. {{doctor}} ke saath reschedule kar di gayi hai. Reference last 4: {{reference}}."
+      },
+      rescheduleDeclined: { type: String, default: "Theek hai, reschedule abhi cancel kar diya. Nayi appointment ya koi aur madad chahiye ho to bata dijiye." },
+      rescheduleAlreadyComplete: { type: String, default: "Aapki appointment already reschedule ho chuki hai. Thank you." },
+      cancelNoActiveBooking: { type: String, default: "Is number par koi active appointment nahi mili. Nayi appointment book karni ho to bata dijiye." },
+      cancelConfirm: { type: String, default: "Aapki booking {{appointment}} ke liye hai. Kya main ise cancel kar doon?" },
+      cancelDeclined: { type: String, default: "Theek hai, appointment cancel nahi ki gayi. Koi aur madad chahiye ho to bata dijiye." },
+      cancelMissingBooking: { type: String, default: "Active booking nahi mili. Koi aur madad chahiye ho to bata dijiye." },
+      cancelFinal: { type: String, default: "Theek hai, {{appointment}} wali appointment cancel kar di gayi hai. Reference last 4: {{reference}}." },
       extraInstructions: { type: String, default: "" }
     },
     llmProviders: {
@@ -194,6 +258,7 @@ const callLogSchema = new Schema(
     selectedSpecialization: { type: String, default: null },
     selectedDoctor: { type: String, default: null },
     doctorId: { type: String, default: null, index: true },
+    appointmentDate: { type: String, default: null },
     preferredDate: { type: String, default: null },
     preferredTime: { type: String, default: null },
     patientName: { type: String, default: null },
@@ -363,6 +428,15 @@ export async function ensurePlatformSeedData(): Promise<void> {
             bookingEnabled: true,
             emergencyMessage: "If this is a medical emergency, please contact emergency support immediately.",
             fallbackPolicy: "ask_again",
+            intelligenceSettings: {
+              enabled: true,
+              askOnlyMissingFields: true,
+              callerNumberConfirmation: true,
+              languageNormalization: true,
+              smartClarification: true,
+              availabilityFirst: true,
+              confidenceThreshold: 0.7
+            },
             costDisplay: {
               showSttCost: true,
               showTtsCost: true,
@@ -384,6 +458,22 @@ export async function ensurePlatformSeedData(): Promise<void> {
               bookingAlreadyCancelled: "This demo booking was cancelled. You can start again by saying appointment book karna hai.",
               transferMessage: "I will transfer you to reception at the configured clinic number.",
               goodbyeMessage: "Thank you for calling. Goodbye.",
+              rescheduleNoActiveBooking: "Is number par koi active appointment nahi mili. Nayi appointment book karni ho to bata dijiye.",
+              rescheduleFoundBooking: "Aapki booking {{appointment}} ke liye hai. Kis din reschedule karna hai?",
+              rescheduleAskNewDay: "Kis din reschedule karna hai? Monday se Sunday mein se din bata dijiye.",
+              rescheduleMissingBooking: "Active booking ki doctor details clear nahi mili. Reception se confirm karna padega.",
+              rescheduleBookingDisabled: "{{doctor}} ke liye reschedule abhi reception se confirm hoga. Main reception se connect kar sakti hoon.",
+              rescheduleSlotsAvailable: "{{availabilityReply}} {{slotChoices}} mein se kaunsa slot rakh doon?",
+              rescheduleAskSlot: "{{slotChoices}} mein se kaunsa slot rakh doon?",
+              rescheduleConfirm: "{{day}} {{slot}} par Dr. {{doctor}} ke saath reschedule kar doon?",
+              rescheduleFinal: "Ho gaya. Aapki appointment {{day}} {{slot}} par Dr. {{doctor}} ke saath reschedule kar di gayi hai. Reference last 4: {{reference}}.",
+              rescheduleDeclined: "Theek hai, reschedule abhi cancel kar diya. Nayi appointment ya koi aur madad chahiye ho to bata dijiye.",
+              rescheduleAlreadyComplete: "Aapki appointment already reschedule ho chuki hai. Thank you.",
+              cancelNoActiveBooking: "Is number par koi active appointment nahi mili. Nayi appointment book karni ho to bata dijiye.",
+              cancelConfirm: "Aapki booking {{appointment}} ke liye hai. Kya main ise cancel kar doon?",
+              cancelDeclined: "Theek hai, appointment cancel nahi ki gayi. Koi aur madad chahiye ho to bata dijiye.",
+              cancelMissingBooking: "Active booking nahi mili. Koi aur madad chahiye ho to bata dijiye.",
+              cancelFinal: "Theek hai, {{appointment}} wali appointment cancel kar di gayi hai. Reference last 4: {{reference}}.",
               extraInstructions: ""
             },
             llmProviders: {
@@ -442,6 +532,28 @@ export async function ensurePlatformSeedData(): Promise<void> {
           doctorId: null
         }
       ]);
+    }
+
+    const demoDoctorUsers = [
+      { email: "ananya@sunrise.test", name: "Dr. Ananya Sharma", password: "Ananya@123", doctorId: "doctor-1" },
+      { email: "rohan@sunrise.test", name: "Dr. Rohan Patel", password: "Rohan@123", doctorId: "doctor-2" },
+      { email: "meera@sunrise.test", name: "Dr. Meera Shah", password: "Meera@123", doctorId: "doctor-3" }
+    ];
+
+    for (const user of demoDoctorUsers) {
+      await UserModel.updateOne(
+        { email: user.email },
+        {
+          $setOnInsert: {
+            email: user.email,
+            name: user.name,
+            role: "DOCTOR",
+            passwordHash: createPasswordHash(user.password),
+            doctorId: user.doctorId
+          }
+        },
+        { upsert: true }
+      );
     }
 
     const faqCount = await DoctorFaqModel.countDocuments();

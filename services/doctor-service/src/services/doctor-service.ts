@@ -32,6 +32,8 @@ type DoctorInput = {
   language?: string;
   scheduleLabel?: string;
   contactNumber?: string;
+  email?: string;
+  password?: string;
 };
 
 type AppointmentInput = {
@@ -53,6 +55,15 @@ type SettingsInput = {
   bookingEnabled?: boolean;
   emergencyMessage?: string;
   fallbackPolicy?: "ask_again" | "transfer" | "end_call" | "create_callback";
+  intelligenceSettings?: {
+    enabled?: boolean;
+    askOnlyMissingFields?: boolean;
+    callerNumberConfirmation?: boolean;
+    languageNormalization?: boolean;
+    smartClarification?: boolean;
+    availabilityFirst?: boolean;
+    confidenceThreshold?: number;
+  };
   costDisplay?: {
     showSttCost?: boolean;
     showTtsCost?: boolean;
@@ -74,6 +85,49 @@ type SettingsInput = {
     bookingAlreadyCancelled?: string;
     transferMessage?: string;
     goodbyeMessage?: string;
+    confirmRememberedDoctor?: string;
+    confirmRememberedDay?: string;
+    callerNumberConfirmation?: string;
+    callerReuseConfirmation?: string;
+    silenceRetryWithSlots?: string;
+    silenceRetryDate?: string;
+    silenceRetryDoctor?: string;
+    silenceRetryGeneric?: string;
+    recoverySpecialization?: string;
+    recoveryTimeWithSlots?: string;
+    recoveryTimeGeneric?: string;
+    recoveryDateWithMemory?: string;
+    recoveryDateGeneric?: string;
+    recoveryDoctorWithMemory?: string;
+    recoveryPatientName?: string;
+    recoveryMobile?: string;
+    recoveryConfirmation?: string;
+    availabilityExactSlotAvailable?: string;
+    availabilitySlotAvailable?: string;
+    availabilityTimeFull?: string;
+    availabilityAlternativeSameBucket?: string;
+    availabilityAlternativeDifferentBucket?: string;
+    availabilityDayUnavailableWithNext?: string;
+    availabilityDayUnavailableNoNext?: string;
+    availabilitySlotsFullWithNext?: string;
+    availabilitySlotsFullNoNext?: string;
+    availabilityBookingDisabled?: string;
+    rescheduleNoActiveBooking?: string;
+    rescheduleFoundBooking?: string;
+    rescheduleAskNewDay?: string;
+    rescheduleMissingBooking?: string;
+    rescheduleBookingDisabled?: string;
+    rescheduleSlotsAvailable?: string;
+    rescheduleAskSlot?: string;
+    rescheduleConfirm?: string;
+    rescheduleFinal?: string;
+    rescheduleDeclined?: string;
+    rescheduleAlreadyComplete?: string;
+    cancelNoActiveBooking?: string;
+    cancelConfirm?: string;
+    cancelDeclined?: string;
+    cancelMissingBooking?: string;
+    cancelFinal?: string;
     extraInstructions?: string;
   };
   llmProviders?: unknown;
@@ -104,10 +158,84 @@ type ProviderHealthInput = {
   apiKeyRef?: string;
 };
 
+const DEFAULT_CONVERSATION_PROMPTS = {
+  askSpecialization: "Aap kis doctor ya specialization ke liye appointment lena chahte hain?",
+  askDoctorPreference: "Kya aap kisi specific doctor se milna chahte hain ya earliest available doctor chalega?",
+  askDate: "Aapko kis din appointment chahiye?",
+  askTime: "Aapko morning, afternoon, ya evening mein slot chahiye?",
+  askPatientName: "Kripya apna naam batayein.",
+  askMobile: "Kripya apna mobile number batayein.",
+  askPatientType: "Kya yeh new patient hai ya follow-up?",
+  confirmPrefix: "Main aapki details confirm karti hoon.",
+  bookingConfirmed: "Dhanyavaad. Aapki booking request dashboard par update kar di gayi hai.",
+  bookingCancelled: "The booking request has been cancelled in demo mode. If you want, we can start again with a new appointment request.",
+  bookingAlreadyComplete: "Your appointment request is already confirmed in demo mode. Thank you for calling.",
+  bookingAlreadyCancelled: "This demo booking was cancelled. You can start again by saying appointment book karna hai.",
+  transferMessage: "I will transfer you to reception at the configured clinic number.",
+  goodbyeMessage: "Thank you for calling. Goodbye.",
+  confirmRememberedDoctor: "{{doctor}} ke liye hi booking karni hai na?",
+  confirmRememberedDay: "{{day}} ke liye hi dekhna hai?",
+  callerNumberConfirmation: "Booking ke liye yahi current number use kar loon? {{maskedNumber}}.",
+  callerReuseConfirmation: "Pichli baar wali contact details use kar loon? {{maskedNumber}}.",
+  silenceRetryWithSlots: "Aap {{slotChoices}} mein se choose kar sakte hain. Main wait kar rahi hoon.",
+  silenceRetryDate: "{{day}} hi rakhna hai ya koi aur din? Main wait kar rahi hoon.",
+  silenceRetryDoctor: "{{doctor}} ke liye hi booking karni hai na?",
+  silenceRetryGeneric: "{{stagePrompt}} Main wait kar rahi hoon.",
+  recoverySpecialization: "Doctor ya department clear nahi aaya. {{specializations}} mein se bata dijiye.",
+  recoveryTimeWithSlots: "Time confirm karna tha. {{slotChoices}} mein se kaunsa rakh doon?",
+  recoveryTimeGeneric: "Time confirm karna tha. Morning chahte hain ya afternoon?",
+  recoveryDateWithMemory: "{{day}} hi rakhna hai, ya koi aur din?",
+  recoveryDateGeneric: "Din confirm karna tha. Kis din ka appointment chahiye?",
+  recoveryDoctorWithMemory: "{{doctor}} ke liye hi booking karni hai na?",
+  recoveryPatientName: "Naam clear nahi aaya. Kis naam se booking karoon?",
+  recoveryMobile: "Mobile number clear nahi aaya. Ek baar number bata dijiye.",
+  recoveryConfirmation: "Confirm karna tha. Details sahi hain?",
+  availabilityExactSlotAvailable: "{{time}} ka slot available hai.",
+  availabilitySlotAvailable: "{{day}} {{timeContext}}{{slot}} ka slot available hai.",
+  availabilityTimeFull: "{{requestedTime}} available nahi hai. {{alternativeFrame}}. Kaunsa rakh doon?",
+  availabilityAlternativeSameBucket: "{{slot1}} aur {{slot2}} available hain",
+  availabilityAlternativeDifferentBucket: "{{slot1}} {{bucket1}} mein hai aur {{slot2}} thoda baad mein hoga",
+  availabilityDayUnavailableWithNext: "{{day}} ko doctor available nahi hain. {{nextDay}} mein {{slotPreview}} mil sakta hai. {{nextDay}} dekh loon?",
+  availabilityDayUnavailableNoNext: "{{day}} ko doctor available nahi hain. Kisi aur doctor ka slot dekh loon?",
+  availabilitySlotsFullWithNext: "{{day}} ke slots full hain. {{nextDay}} mein {{slotPreview}} mil sakta hai. Wahi dekh loon?",
+  availabilitySlotsFullNoNext: "{{day}} ke slots full hain. Kisi aur doctor ka slot dekh loon?",
+  availabilityBookingDisabled: "{{doctor}} ke liye booking abhi reception se confirm hogi. Main connect kar sakti hoon.",
+  rescheduleNoActiveBooking: "Is number par koi active appointment nahi mili. Nayi appointment book karni ho to bata dijiye.",
+  rescheduleFoundBooking: "Aapki booking {{appointment}} ke liye hai. Kis din reschedule karna hai?",
+  rescheduleAskNewDay: "Kis din reschedule karna hai? Monday se Sunday mein se din bata dijiye.",
+  rescheduleMissingBooking: "Active booking ki doctor details clear nahi mili. Reception se confirm karna padega.",
+  rescheduleBookingDisabled: "{{doctor}} ke liye reschedule abhi reception se confirm hoga. Main reception se connect kar sakti hoon.",
+  rescheduleSlotsAvailable: "{{availabilityReply}} {{slotChoices}} mein se kaunsa slot rakh doon?",
+  rescheduleAskSlot: "{{slotChoices}} mein se kaunsa slot rakh doon?",
+  rescheduleConfirm: "{{day}} {{slot}} par Dr. {{doctor}} ke saath reschedule kar doon?",
+  rescheduleFinal: "Ho gaya. Aapki appointment {{day}} {{slot}} par Dr. {{doctor}} ke saath reschedule kar di gayi hai. Reference last 4: {{reference}}.",
+  rescheduleDeclined: "Theek hai, reschedule abhi cancel kar diya. Nayi appointment ya koi aur madad chahiye ho to bata dijiye.",
+  rescheduleAlreadyComplete: "Aapki appointment already reschedule ho chuki hai. Thank you.",
+  cancelNoActiveBooking: "Is number par koi active appointment nahi mili. Nayi appointment book karni ho to bata dijiye.",
+  cancelConfirm: "Aapki booking {{appointment}} ke liye hai. Kya main ise cancel kar doon?",
+  cancelDeclined: "Theek hai, appointment cancel nahi ki gayi. Koi aur madad chahiye ho to bata dijiye.",
+  cancelMissingBooking: "Active booking nahi mili. Koi aur madad chahiye ho to bata dijiye.",
+  cancelFinal: "Theek hai, {{appointment}} wali appointment cancel kar di gayi hai. Reference last 4: {{reference}}.",
+  extraInstructions: ""
+};
+
+const DEFAULT_DOCTOR_AVAILABILITY = [
+  { day: "Monday", start: "09:00", end: "17:00", blocked: false, leave: false },
+  { day: "Tuesday", start: "09:00", end: "17:00", blocked: false, leave: false },
+  { day: "Wednesday", start: "09:00", end: "17:00", blocked: false, leave: false },
+  { day: "Thursday", start: "09:00", end: "17:00", blocked: false, leave: false },
+  { day: "Friday", start: "09:00", end: "17:00", blocked: false, leave: false },
+  { day: "Saturday", start: "10:00", end: "14:00", blocked: false, leave: false }
+];
+
 type DoctorScopedUser = AuthUser & { doctorId?: string | null };
 
 function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeAvailability(availability: unknown) {
+  return Array.isArray(availability) && availability.length > 0 ? availability : DEFAULT_DOCTOR_AVAILABILITY;
 }
 
 function toDoctorSummary(doctor: any) {
@@ -122,7 +250,7 @@ function toDoctorSummary(doctor: any) {
     active: doctor.active,
     language: doctor.language,
     scheduleLabel: doctor.scheduleLabel,
-    availability: doctor.availability,
+    availability: normalizeAvailability(doctor.availability),
     contactNumber: doctor.contactNumber
   };
 }
@@ -144,7 +272,25 @@ function toAppointmentSummary(appointment: any) {
   };
 }
 
+function inferDoctorFromTranscript(transcriptHistory: any[] | null | undefined): string | null {
+  const entries = Array.isArray(transcriptHistory) ? transcriptHistory : [];
+
+  for (const entry of [...entries].reverse()) {
+    const text = String(entry?.text ?? "");
+    const match = text.match(/\bDr\.?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})\b/);
+    if (match?.[1]) {
+      return `Dr. ${match[1]}`.trim();
+    }
+  }
+
+  return null;
+}
+
 function toCallSummary(call: any) {
+  const selectedDoctor = call.selectedDoctor ?? inferDoctorFromTranscript(call.transcriptHistory);
+  const outcome = call.bookingStage === "rescheduled" ? "rescheduled" : call.outcome;
+  const appointmentDate = call.appointmentDate ?? ([call.preferredDate, call.preferredTime].filter(Boolean).join(" ") || null);
+
   return {
     id: call.sessionId,
     sessionId: call.sessionId,
@@ -153,8 +299,9 @@ function toCallSummary(call: any) {
     bookingStage: call.bookingStage,
     latestIntent: call.latestIntent,
     selectedSpecialization: call.selectedSpecialization,
-    selectedDoctor: call.selectedDoctor,
+    selectedDoctor,
     doctorId: call.doctorId,
+    appointmentDate,
     preferredDate: call.preferredDate,
     preferredTime: call.preferredTime,
     patientName: call.patientName,
@@ -162,7 +309,7 @@ function toCallSummary(call: any) {
     contactNumber: call.contactNumber,
     bookingResult: call.bookingResult,
     currentNode: call.currentNode ?? call.bookingStage,
-    outcome: call.outcome,
+    outcome,
     costSummary: call.costSummary ?? null,
     usageLedger: call.usageLedger ?? [],
     transcriptHistory: call.transcriptHistory,
@@ -263,6 +410,7 @@ export class DoctorService {
       supportedLanguage: settings?.language ?? doctor?.language ?? "en",
       bookingEnabled: settings?.bookingEnabled ?? true,
       fallbackPolicy: settings?.fallbackPolicy ?? "ask_again",
+      intelligenceSettings: settings?.intelligenceSettings ?? null,
       costDisplay: settings?.costDisplay ?? null,
       conversationPrompts: settings?.conversationPrompts ?? null,
       llmProviders: settings?.llmProviders ?? null,
@@ -311,8 +459,50 @@ export class DoctorService {
       warnings.push(`${apiKeyRef || "API key ref"} is not available in server environment.`);
     }
 
-    const sarvamBulbulV3Voices = ["aditya", "ritu", "ashutosh", "priya", "neha", "rahul", "pooja", "rohan", "simran", "kavya", "amit", "dev"];
-    const sarvamBulbulV2Voices = ["anushka", "abhilash", "manisha", "vidya"];
+    const sarvamBulbulV3Voices = [
+      "shubh",
+      "arvind",
+      "aditya",
+      "ritu",
+      "priya",
+      "neha",
+      "rahul",
+      "pooja",
+      "rohan",
+      "simran",
+      "kavya",
+      "amit",
+      "dev",
+      "ishita",
+      "shreya",
+      "ratan",
+      "varun",
+      "manan",
+      "sumit",
+      "roopa",
+      "kabir",
+      "aayan",
+      "ashutosh",
+      "advait",
+      "anand",
+      "amol",
+      "tanya",
+      "tarun",
+      "sunny",
+      "mani",
+      "gokul",
+      "vijay",
+      "shruti",
+      "suhani",
+      "mohit",
+      "kavitha",
+      "rehan",
+      "soham",
+      "rupali",
+      "amelia",
+      "sophia"
+    ];
+    const sarvamBulbulV2Voices = ["anushka", "abhilash", "manisha", "vidya", "arya", "karun", "hitesh", "meera"];
 
     if (service === "tts" && provider === "sarvam" && model === "bulbul:v3" && input.voice && !sarvamBulbulV3Voices.includes(String(input.voice).toLowerCase())) {
       warnings.push(`${input.voice} is not in the configured Bulbul v3 voice list.`);
@@ -358,6 +548,7 @@ export class DoctorService {
               bookingEnabled: doctorMap.get(doctor.doctorId)?.bookingEnabled,
               emergencyMessage: doctorMap.get(doctor.doctorId)?.emergencyMessage,
               fallbackPolicy: doctorMap.get(doctor.doctorId)?.fallbackPolicy,
+              intelligenceSettings: doctorMap.get(doctor.doctorId)?.intelligenceSettings,
               costDisplay: doctorMap.get(doctor.doctorId)?.costDisplay,
               conversationPrompts: doctorMap.get(doctor.doctorId)?.conversationPrompts,
               llmProviders: doctorMap.get(doctor.doctorId)?.llmProviders,
@@ -428,6 +619,15 @@ export class DoctorService {
 
   async createDoctor(input: DoctorInput) {
     const doctorId = makeId("doctor");
+    const email = input.email?.trim().toLowerCase();
+
+    if (email) {
+      const existingUser = await UserModel.exists({ email });
+      if (existingUser) {
+        throw new Error("A user with this email already exists.");
+      }
+    }
+
     const doctor = await DoctorModel.create({
       doctorId,
       name: input.name,
@@ -436,7 +636,7 @@ export class DoctorService {
       clinicName: input.clinicName,
       language: input.language ?? "en",
       scheduleLabel: input.scheduleLabel ?? "Mon-Sat, 9:00 AM to 6:00 PM",
-      availability: [],
+      availability: DEFAULT_DOCTOR_AVAILABILITY,
       contactNumber: input.contactNumber ?? ""
     });
 
@@ -451,30 +651,33 @@ export class DoctorService {
       bookingEnabled: true,
       emergencyMessage: "If this is a medical emergency, please contact emergency support immediately.",
       fallbackPolicy: "ask_again",
+      intelligenceSettings: {
+        enabled: true,
+        askOnlyMissingFields: true,
+        callerNumberConfirmation: true,
+        languageNormalization: true,
+        smartClarification: true,
+        availabilityFirst: true,
+        confidenceThreshold: 0.7
+      },
       costDisplay: {
         showSttCost: true,
         showTtsCost: true,
         showLlmCost: true,
         showTotalCost: true
       },
-      conversationPrompts: {
-        askSpecialization: "Aap kis doctor ya specialization ke liye appointment lena chahte hain?",
-        askDoctorPreference: "Kya aap kisi specific doctor se milna chahte hain ya earliest available doctor chalega?",
-        askDate: "Aapko kis din appointment chahiye?",
-        askTime: "Aapko morning, afternoon, ya evening mein slot chahiye?",
-        askPatientName: "Kripya apna naam batayein.",
-        askMobile: "Kripya apna mobile number batayein.",
-        askPatientType: "Kya yeh new patient hai ya follow-up?",
-        confirmPrefix: "Main aapki details confirm karti hoon.",
-        bookingConfirmed: "Dhanyavaad. Aapki booking request dashboard par update kar di gayi hai.",
-        bookingCancelled: "The booking request has been cancelled in demo mode. If you want, we can start again with a new appointment request.",
-        bookingAlreadyComplete: "Your appointment request is already confirmed in demo mode. Thank you for calling.",
-        bookingAlreadyCancelled: "This demo booking was cancelled. You can start again by saying appointment book karna hai.",
-        transferMessage: "I will transfer you to reception at the configured clinic number.",
-        goodbyeMessage: "Thank you for calling. Goodbye.",
-        extraInstructions: ""
-      }
+      conversationPrompts: DEFAULT_CONVERSATION_PROMPTS
     });
+
+    if (email && input.password) {
+      await UserModel.create({
+        email,
+        name: input.name,
+        role: "DOCTOR",
+        doctorId,
+        passwordHash: hashPassword(input.password)
+      });
+    }
 
     return toDoctorSummary(doctor.toObject());
   }
@@ -595,14 +798,15 @@ export class DoctorService {
       bookingEnabled: setting.bookingEnabled,
       emergencyMessage: setting.emergencyMessage,
       fallbackPolicy: setting.fallbackPolicy ?? "ask_again",
+      intelligenceSettings: setting.intelligenceSettings ?? null,
       costDisplay: setting.costDisplay ?? null,
-      conversationPrompts: setting.conversationPrompts ?? null,
+      conversationPrompts: { ...DEFAULT_CONVERSATION_PROMPTS, ...(setting.conversationPrompts ?? {}) },
       llmProviders: setting.llmProviders ?? null,
       sttProviders: setting.sttProviders ?? null,
       ttsProviders: setting.ttsProviders ?? null,
       fee: doctorMap.get(setting.doctorId)?.fee ?? null,
       scheduleLabel: doctorMap.get(setting.doctorId)?.scheduleLabel ?? null,
-      availability: doctorMap.get(setting.doctorId)?.availability ?? []
+      availability: normalizeAvailability(doctorMap.get(setting.doctorId)?.availability)
     }));
   }
 
@@ -626,6 +830,7 @@ export class DoctorService {
           ...(typeof input.bookingEnabled === "boolean" ? { bookingEnabled: input.bookingEnabled } : {}),
           ...(input.emergencyMessage ? { emergencyMessage: input.emergencyMessage } : {}),
           ...(input.fallbackPolicy ? { fallbackPolicy: input.fallbackPolicy } : {}),
+          ...(input.intelligenceSettings ? { intelligenceSettings: input.intelligenceSettings } : {}),
           ...(input.costDisplay ? { costDisplay: input.costDisplay } : {}),
           ...(input.conversationPrompts ? { conversationPrompts: input.conversationPrompts } : {}),
           ...(input.llmProviders ? { llmProviders: input.llmProviders } : {}),

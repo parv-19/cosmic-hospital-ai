@@ -191,8 +191,50 @@ async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger
 }
 
 const SARVAM_TTS_VOICES_BY_MODEL = {
-    'bulbul:v3': new Set(['aditya', 'ritu', 'ashutosh', 'priya', 'neha', 'rahul', 'pooja', 'rohan', 'simran', 'kavya', 'amit', 'dev']),
-    'bulbul:v2': new Set(['anushka', 'abhilash', 'manisha', 'vidya'])
+    'bulbul:v3': new Set([
+        'shubh',
+        'arvind',
+        'aditya',
+        'ritu',
+        'priya',
+        'neha',
+        'rahul',
+        'pooja',
+        'rohan',
+        'simran',
+        'kavya',
+        'amit',
+        'dev',
+        'ishita',
+        'shreya',
+        'ratan',
+        'varun',
+        'manan',
+        'sumit',
+        'roopa',
+        'kabir',
+        'aayan',
+        'ashutosh',
+        'advait',
+        'anand',
+        'amol',
+        'tanya',
+        'tarun',
+        'sunny',
+        'mani',
+        'gokul',
+        'vijay',
+        'shruti',
+        'suhani',
+        'mohit',
+        'kavitha',
+        'rehan',
+        'soham',
+        'rupali',
+        'amelia',
+        'sophia'
+    ]),
+    'bulbul:v2': new Set(['anushka', 'abhilash', 'manisha', 'vidya', 'arya', 'karun', 'hitesh', 'meera'])
 };
 
 const SARVAM_TTS_DEFAULT_VOICE_BY_MODEL = {
