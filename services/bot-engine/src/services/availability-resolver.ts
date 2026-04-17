@@ -254,7 +254,8 @@ function nextAvailableDay(
   doctor: AvailabilityRuntimeDoctor,
   requestedDay: string,
   appointments: AppointmentSnapshot[],
-  durationMinutes: number
+  durationMinutes: number,
+  requestedTime?: string | null
 ): { day: string; slots: string[] } | null {
   const startIndex = DAY_ORDER.indexOf(requestedDay);
   const orderedDays = [...DAY_ORDER.slice(startIndex + 1), ...DAY_ORDER.slice(0, startIndex + 1)];
@@ -265,7 +266,7 @@ function nextAvailableDay(
 
     const slots = generateSlots(dayConfig, durationMinutes);
     const occupied = occupiedSlotsForDay(doctor, day, appointments, slots);
-    const free = slots.filter((slot) => !occupied.has(slot));
+    const free = filterSlotsByPreference(slots.filter((slot) => !occupied.has(slot)), requestedTime);
 
     if (free.length > 0) {
       return { day, slots: free };
@@ -310,6 +311,10 @@ function frameAlternativeSlots(slots: string[], prompts: Required<AvailabilityPr
     bucket1: firstBucket,
     bucket2: secondBucket
   });
+}
+
+function isBucketPreference(value: string | null | undefined): boolean {
+  return ["morning", "afternoon", "evening"].includes(String(value ?? "").toLowerCase());
 }
 
 export function resolveAvailability(input: {
@@ -388,6 +393,13 @@ export function resolveAvailability(input: {
   if (requestedTime) {
     const alternative = freeSlots.slice(0, 2);
     if (alternative.length > 0) {
+      const nextPreferred = isBucketPreference(requestedTime)
+        ? nextAvailableDay(doctor, requestedDay, input.appointments, durationMinutes, requestedTime)
+        : null;
+      const nextPreferredText = nextPreferred?.slots.length
+        ? ` ${nextPreferred.day} ko ${listPreview(nextPreferred.slots)} ${requestedTime} mein mil sakta hai. Dusra day chalega?`
+        : "";
+
       return {
         status: "time_full",
         checkKey,
@@ -397,10 +409,10 @@ export function resolveAvailability(input: {
           slotPreview: listPreview(alternative),
           slot1: alternative[0],
           slot2: alternative[1]
-        }),
-        offeredDate: requestedDay,
-        offeredTime: alternative[0],
-        offeredSlots: alternative
+        }) + nextPreferredText,
+        offeredDate: nextPreferred?.day ?? requestedDay,
+        offeredTime: nextPreferred?.slots[0] ?? alternative[0],
+        offeredSlots: nextPreferred?.slots.slice(0, 2) ?? alternative
       };
     }
   }

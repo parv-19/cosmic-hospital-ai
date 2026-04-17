@@ -20,6 +20,9 @@ const INTERVAL_MS = 100;
 const MIN_INBOUND_CHUNKS = 20;
 const BOT_ENGINE_URL = 'http://localhost:4004/process-call';
 const BOT_ENGINE_BASE_URL = BOT_ENGINE_URL.replace(/\/process-call$/, '');
+const TRANSFER_CONTROL_TYPE = process.env.TRANSFER_CONTROL_TYPE || 'transfer';
+const TRANSFER_CONNECT_TO = process.env.TRANSFER_CONNECT_TO || 'reception';
+const TRANSFER_CONFIRMATION_MESSAGE = process.env.TRANSFER_CONFIRMATION_MESSAGE || 'I am transferring your call, please hold.';
 const PLAY_WELCOME_FILE = greetingConfig.playWelcomeFile;
 const END_OF_SPEECH_MS = greetingConfig.endOfSpeechMs;
 const MIN_UTTERANCE_MS = greetingConfig.minUtteranceMs;
@@ -120,6 +123,9 @@ function createSessionState(ws) {
         demoTurnIndex: 0,
         demoCompleted: false,
         hangupSent: false,
+        transferPending: false,
+        transferSent: false,
+        transferNumber: '',
         cleanupNotified: false,
     };
 }
@@ -518,12 +524,70 @@ function sendOutboundTick(state) {
         clearCurrentUtterance(state);
         state.speakingSource = '';
 
+        if (state.transferPending && !state.transferSent && state.ws.readyState === WebSocket.OPEN) {
+            sendTransferControl(state, 'reply-finished');
+            return;
+        }
+
+        if (state.transferPending) {
+            return;
+        }
+
         if (state.demoCompleted && !state.hangupSent && state.ws.readyState === WebSocket.OPEN) {
             state.hangupSent = true;
             logger.log(`[${state.uuid || 'pending'}] sending hangup after final reply`);
             state.ws.send(JSON.stringify({ type: 'hangup', uuid: state.uuid || 'pending' }));
         }
     }
+}
+
+function sendTransferControl(state, reason) {
+    if (state.transferSent || state.ws.readyState !== WebSocket.OPEN) {
+        return;
+    }
+
+    state.transferSent = true;
+    const transferPayload = buildTransferControlPayload(state);
+    logger.log(`[${state.uuid || 'pending'}] sending transfer reason=${reason} payload=${JSON.stringify(transferPayload)}`);
+    state.ws.send(JSON.stringify(transferPayload));
+}
+
+function buildTransferControlPayload(state) {
+    const dialNumber = state.transferNumber || normalizeTransferDialNumber(state.aiConfig?.transferNumber || '');
+
+    return {
+        type: TRANSFER_CONTROL_TYPE,
+        intent: 'user request to transfer',
+        connectto: normalizeTransferConnectTo(TRANSFER_CONNECT_TO),
+        connectno: dialNumber
+    };
+}
+
+function normalizeTransferConnectTo(value) {
+    return String(value || '').trim().split(/\s+/)[0].toLowerCase();
+}
+
+function normalizeTransferDialNumber(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+
+    if (digits.length === 10) {
+        return digits;
+    }
+
+    if (digits.length === 12 && digits.startsWith('91')) {
+        return digits.slice(2);
+    }
+
+    if (digits.length === 11 && digits.startsWith('0')) {
+        return digits.slice(1);
+    }
+
+    if (digits.length === 13 && digits.startsWith('091')) {
+        return digits.slice(3);
+    }
+
+    logger.warn(`[transfer] unexpected number format digits=${digits} length=${digits.length}`);
+    return digits;
 }
 
 /* =====================
@@ -627,11 +691,33 @@ async function finalizeCurrentUtterance(state, reason) {
             }
         ];
         const botResponse = await callBotEngine(transcript, state.uuid || 'demo-session', state.callerNumber || 'unknown', usageEvents);
-        const replyText = botResponse?.data?.reply || 'I am sorry, I could not process your request right now.';
-        logger.log(`[${state.uuid || 'demo-session'}] bot reply: ${replyText}`);
+        let replyText = botResponse?.data?.reply || 'I am sorry, I could not process your request right now.';
         logger.log(`[${state.uuid || 'demo-session'}] bot state stage=${botResponse?.data?.stage || 'unknown'} action=${botResponse?.data?.action || 'unknown'} intent=${botResponse?.data?.intent || 'unknown'}`);
+        const botAction = botResponse?.data?.action || '';
+        const botIntent = botResponse?.data?.intent || '';
+        const botCallStatus = botResponse?.data?.session?.callStatus;
+        const shouldTransferCall = botAction === 'transfer_call' || botAction === 'fallback_transfer' || botIntent === 'human_escalation' || botCallStatus === 'transferred';
+
+        if (shouldTransferCall) {
+            state.transferPending = true;
+            const rawTransferNumber = state.aiConfig?.transferNumber || extractTransferNumber(replyText) || '';
+            state.transferNumber = normalizeTransferDialNumber(rawTransferNumber);
+            replyText = TRANSFER_CONFIRMATION_MESSAGE;
+            logger.log(`[${state.uuid || 'demo-session'}] transfer queued number=${state.transferNumber || 'unknown'}`);
+            sendTransferControl(state, 'transfer-intent');
+            if (state.ws.readyState !== WebSocket.OPEN) {
+                return;
+            }
+        }
+
+        logger.log(`[${state.uuid || 'demo-session'}] bot reply: ${replyText}`);
 
         const audioBuffer = await generateReplyTtsAudio(state, replyText);
+        if (state.ws.readyState !== WebSocket.OPEN || state.cleanupNotified) {
+            logger.log(`[${state.uuid || 'demo-session'}] skipping reply audio enqueue because websocket is closed`);
+            return;
+        }
+
         logger.log(`[${state.uuid || 'demo-session'}] reply TTS buffer generated: ${audioBuffer.length} bytes`);
         const ttsConfig = state.aiConfig?.ttsProviders || {};
         void recordUsageLedger(state.uuid || 'demo-session', [
@@ -651,7 +737,14 @@ async function finalizeCurrentUtterance(state, reason) {
         state.demoTurnIndex += 1;
         state.lastProcessedAt = Date.now();
 
-        if (botResponse?.data?.stage === 'booked' || botResponse?.data?.stage === 'cancelled' || botResponse?.data?.stage === 'rescheduled') {
+        if (
+            botResponse?.data?.stage === 'booked' ||
+            botResponse?.data?.stage === 'cancelled' ||
+            botResponse?.data?.stage === 'rescheduled' ||
+            botCallStatus === 'completed' ||
+            botCallStatus === 'cancelled' ||
+            botCallStatus === 'transferred'
+        ) {
             state.demoCompleted = true;
         }
 
@@ -715,6 +808,11 @@ function selectTranscript(rawTranscript, fallbackTranscript, state) {
 
 function normalizeTranscript(text) {
     return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function extractTransferNumber(text) {
+    const match = String(text || '').match(/(?:\+?\d[\d\s().-]{7,}\d)/);
+    return match ? match[0].replace(/\s+/g, '') : '';
 }
 
 function isUsableTranscript(text) {

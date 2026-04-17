@@ -269,6 +269,7 @@ function createNewSession(sessionId: string, callerNumber?: string): DemoSession
     patientName: null,
     patientType: null,
     contactNumber: null,
+    partialMobileDigits: null,
     bookingContactConfirmed: false,
     bookingContactConfirmationPending: false,
     availabilityCheckKey: null,
@@ -351,7 +352,6 @@ function withExtraInstructions(message: string, prompts: ConversationPrompts): s
 
 function canUseConfiguredLlmReply(action: string): boolean {
   return new Set([
-    "demo_fallback",
     "greet_and_prompt",
     "reset_to_greeting",
     "emergency_escalation",
@@ -363,6 +363,53 @@ function canUseConfiguredLlmReply(action: string): boolean {
 
 function isFallbackAction(action: string): boolean {
   return action === "greet_and_prompt" || action === "reset_to_greeting" || action.startsWith("reprompt_");
+}
+
+function matchHumanTransferIntent(normalizedTranscript: string): boolean {
+  return [
+    "human",
+    "human agent",
+    "human se baat",
+    "human agent se baat",
+    "agent",
+    "agent se baat",
+    "agent baat",
+    "representative",
+    "representative se baat",
+    "operator",
+    "operator se baat",
+    "reception",
+    "reception se baat",
+    "receptionist",
+    "receptionist se baat",
+    "staff se baat",
+    "person se baat",
+    "insaan se baat",
+    "kisi aadmi se baat",
+    "baat kara do",
+    "baat karwa do",
+    "connect kar do",
+    "connect kar dijiye",
+    "transfer kar do",
+    "transfer kar dijiye",
+    "call transfer",
+    "\u0939\u094d\u092f\u0942\u092e\u0928",
+    "\u0939\u094d\u092f\u0942\u092e\u0928 \u090f\u091c\u0947\u0902\u091f",
+    "\u0939\u094d\u092f\u0942\u092e\u0928 \u090f\u091c\u0947\u0902\u091f \u092c\u093e\u0924",
+    "\u090f\u091c\u0947\u0902\u091f",
+    "\u090f\u091c\u0947\u0902\u091f \u0938\u0947 \u092c\u093e\u0924",
+    "\u090f\u091c\u0947\u0902\u091f \u092c\u093e\u0924",
+    "\u0930\u093f\u0938\u0947\u092a\u094d\u0936\u0928",
+    "\u0930\u093f\u0938\u0947\u092a\u094d\u0936\u0928 \u0938\u0947 \u092c\u093e\u0924",
+    "\u0930\u093f\u0938\u0947\u092a\u094d\u0936\u0928\u093f\u0938\u094d\u091f",
+    "\u0913\u092a\u0930\u0947\u091f\u0930",
+    "\u0938\u094d\u091f\u093e\u092b \u0938\u0947 \u092c\u093e\u0924",
+    "\u0915\u093f\u0938\u0940 \u0938\u0947 \u092c\u093e\u0924",
+    "\u092c\u093e\u0924 \u0915\u0930\u093e \u0926\u094b",
+    "\u092c\u093e\u0924 \u0915\u0930\u0935\u093e \u0926\u094b",
+    "\u0915\u0928\u0947\u0915\u094d\u091f \u0915\u0930 \u0926\u094b",
+    "\u091f\u094d\u0930\u093e\u0902\u0938\u092b\u0930 \u0915\u0930 \u0926\u094b"
+  ].some((phrase) => normalizedTranscript.includes(phrase));
 }
 
 function buildConfiguredSystemPrompt(
@@ -385,6 +432,7 @@ function buildConfiguredSystemPrompt(
     `Patient name: ${session.patientName ?? "not collected"}.`,
     `Contact number: ${session.contactNumber ?? "not collected"}.`,
     `Available doctors: ${doctorList || "none configured"}.`,
+    "When referring to the clinic's doctors or slots, say \"humare paas\", not \"aap ke paas\".",
     `Configured prompt instructions: ${prompts.extraInstructions || "none"}.`,
     `Use this configured pipeline response as the source of truth: ${baseReply}`
   ].join("\n");
@@ -418,12 +466,89 @@ function matchIntentStart(normalizedTranscript: string): boolean {
     "hello",
     "hi",
     "namaste",
+    "namaskar",
+    "appointment chahiye",
     "mujhe appointment chahiye",
     "mujhe appointment book karni hai",
     "mujhe appointment book karni hai",
     "doctor appointment chahiye",
     "appointment book karna hai",
+    "appointment book karni hai",
+    "appointment lena hai",
+    "appointment leni hai",
+    "appointment lagana hai",
+    "appointment lagani hai",
+    "appointment lagwa do",
+    "appointment lagwani hai",
+    "appointment kar do",
+    "appointment kar dijiye",
+    "appointment fix karni hai",
+    "appointment schedule karni hai",
+    "doctor ko dikhana hai",
+    "doctor se milna hai",
+    "doctor sahab ko dikhana hai",
+    "doctor madam ko dikhana hai",
+    "checkup karana hai",
+    "check up karana hai",
+    "consultation chahiye",
+    "consult karna hai",
+    "nayi appointment",
+    "new appointment",
+    "new booking",
+    "token lena hai",
+    "number lagana hai",
+    "number lagwana hai",
+    "opd appointment",
+    "opd booking",
     "appointment",
+    "book karani hai",
+    "book karana hai",
+    "book karni hai",
+    "book karna hai",
+    "book karwa do",
+    "book karwa dijiye",
+    "book kara do",
+    "book kara dijiye",
+    "booking karani hai",
+    "booking karni hai",
+    "booking karna hai",
+    "booking kara do",
+    "booking karwa do",
+    "appointment karani hai",
+    "appointment leni hai",
+    "अपॉइंटमेंट चाहिए",
+    "अपॉइंटमेंट बुक",
+    "अपॉइंटमेंट करनी",
+    "अपॉइंटमेंट करना",
+    "अपॉइंटमेंट लेना",
+    "अपॉइंटमेंट लेनी",
+    "अपॉइंटमेंट लगानी",
+    "अपॉइंटमेंट लगवानी",
+    "अपॉइंटमेंट लगा दो",
+    "अपॉइंटमेंट कर दो",
+    "अपॉइंटमेंट कर दीजिए",
+    "अपोइंटमेंट चाहिए",
+    "अपोइंटमेंट बुक",
+    "डॉक्टर को दिखाना",
+    "डॉक्टर से मिलना",
+    "डॉक्टर साहब को दिखाना",
+    "डॉक्टर मैडम को दिखाना",
+    "चेकअप कराना",
+    "कंसल्ट करना",
+    "नयी अपॉइंटमेंट",
+    "नई अपॉइंटमेंट",
+    "नयी बुकिंग",
+    "नई बुकिंग",
+    "नंबर लगाना",
+    "नंबर लगवाना",
+    "ओपीडी बुकिंग",
+    "अपॉइंटमेंट",
+    "अपोइंटमेंट",
+    "बुक",
+    "बुक करानी",
+    "बुक करवानी",
+    "करानी है",
+    "करवानी है",
     "मुझे अपॉइंटमेंट चाहिए",
     "मुझे अपॉइंटमेंट बुक करनी है",
     "अपॉइंटमेंट बुक करना है",
@@ -431,20 +556,130 @@ function matchIntentStart(normalizedTranscript: string): boolean {
   ].some((phrase) => normalizedTranscript.includes(phrase));
 }
 
+function asksDoctorList(normalizedTranscript: string): boolean {
+  return [
+    "which doctors",
+    "available doctors",
+    "doctor available",
+    "kaun kaun se doctor",
+    "kon kon se doctor",
+    "kaunse doctor",
+    "doctor list",
+    "कौन कौन से डॉक्टर",
+    "कौनसे डॉक्टर",
+    "डॉक्टर अवेलेबल",
+    "डॉक्टर उपलब्ध"
+  ].some((phrase) => normalizedTranscript.includes(phrase.toLowerCase()));
+}
+
+function buildAvailableDoctorsReply(runtimeDoctors: RuntimeDoctor[]): string {
+  const doctors = (runtimeDoctors.length > 0 ? runtimeDoctors : FALLBACK_DOCTORS)
+    .map((doctor) => `${doctor.name} (${doctor.specialization})`);
+
+  if (doctors.length === 0) {
+    return "Humare paas abhi doctor directory load nahi ho payi. Kaunsa department chahiye?";
+  }
+
+  const lastDoctor = doctors.pop();
+  const doctorText = doctors.length > 0 ? `${doctors.join(", ")}, aur ${lastDoctor}` : lastDoctor;
+  return `Humare paas available doctors hain: ${doctorText}. Aap kaunsa doctor chahte hain?`;
+}
+
 function matchRescheduleIntent(normalizedTranscript: string): boolean {
   return [
     "reschedule",
     "re schedule",
+    "ree schedule",
+    "re-schedule",
+    "rescheduled",
+    "rescheduling",
+    "reshedule",
+    "reshchedule",
+    "resedule",
+    "resedual",
+    "resedule karna",
+    "reschedule karna",
+    "reschedule karni",
+    "reschedule kar do",
+    "reschedule kar dijiye",
+    "reschedule karwa do",
+    "appointment reschedule",
+    "appointment resedule",
     "change appointment",
     "appointment change",
+    "appointment change karni hai",
+    "appointment change karna hai",
+    "appointment change kar do",
+    "booking change",
+    "booking change karni hai",
     "slot change",
     "change slot",
+    "slot badalna hai",
+    "slot badalni hai",
+    "slot badal do",
+    "time change",
+    "time change karna hai",
+    "time badalna hai",
+    "time badal do",
+    "date change",
+    "date change karni hai",
+    "date badalni hai",
+    "date badal do",
+    "din change",
+    "din badalna hai",
+    "din badal do",
     "doosra slot",
     "dusra slot",
+    "dusre slot",
+    "dusre time",
+    "doosre time",
+    "dusre din",
+    "doosre din",
     "appointment shift",
     "shift appointment",
+    "shift karna hai",
+    "shift kar do",
     "postpone appointment",
+    "postpone karna hai",
+    "postpone kar do",
+    "prepone appointment",
+    "prepone karna hai",
+    "prepone kar do",
     "move appointment",
+    "aage karna hai",
+    "aage kar do",
+    "peeche karna hai",
+    "peeche kar do",
+    "next week kar do",
+    "kal ki jagah",
+    "parso ki jagah",
+    "same appointment dusre din",
+    "मेरी अपॉइंटमेंट रीशेड्यूल",
+    "अपॉइंटमेंट रीशेड्यूल",
+    "रिशेड्यूल",
+    "रीशेड्यूल",
+    "री शेड्यूल",
+    "रि शेड्यूल",
+    "रीशेड्यूल कर",
+    "रिशेड्यूल कर",
+    "अपॉइंटमेंट बदल",
+    "अपॉइंटमेंट चेंज",
+    "बुकिंग बदल",
+    "बुकिंग चेंज",
+    "स्लॉट बदल",
+    "टाइम बदल",
+    "समय बदल",
+    "डेट बदल",
+    "दिन बदल",
+    "दूसरा स्लॉट",
+    "दुसरा स्लॉट",
+    "दूसरे स्लॉट",
+    "दूसरा टाइम",
+    "दूसरे दिन",
+    "आगे कर",
+    "पीछे कर",
+    "पोस्टपोन",
+    "प्रीपोन",
     "रीशेड्यूल",
     "री शेड्यूल",
     "अपॉइंटमेंट बदल",
@@ -456,17 +691,107 @@ function matchRescheduleIntent(normalizedTranscript: string): boolean {
 
 function matchCancelAppointmentIntent(normalizedTranscript: string): boolean {
   return [
+    "cancel",
+    "cansel",
+    "cansil",
+    "cancelled",
+    "cancellation",
     "cancel appointment",
     "cancel booking",
+    "cancel karna",
+    "cancel karni",
+    "cancel kar do",
+    "cancel kar dijiye",
+    "cancel kara do",
+    "cancel kara dijiye",
+    "cancel karwa do",
+    "cancel karwa dijiye",
+    "cancel krna",
+    "cancel kr do",
+    "cansil kar do",
+    "cansel kar do",
     "appointment cancel",
+    "appointment cancel karni hai",
+    "appointment cancel karna hai",
+    "appointment cancel kar do",
+    "appointment cancel kara do",
+    "appointment cancel karwa do",
     "booking cancel",
-    "cancellation",
+    "booking cancel karni hai",
+    "booking cancel karna hai",
+    "booking cancel kar do",
+    "booking cancel kara do",
+    "booking cancel karwa do",
     "cancel my appointment",
+    "mujhe cancel karni hai",
+    "mujhe cancel karna hai",
+    "meri appointment cancel",
+    "meri booking cancel",
+    "20 april wali cancel",
+    "april wali cancel",
+    "appointment nahi chahiye",
+    "booking nahi chahiye",
+    "mat book karo",
+    "mat karna appointment",
+    "appointment hata do",
+    "booking hata do",
+    "appointment delete",
+    "booking delete",
+    "call off appointment",
     "कैंसल",
     "कैंसिल",
+    "केंसल",
+    "कैनसल",
+    "कैनसिल",
+    "कैंसल कर",
+    "कैंसिल कर",
+    "केंसल कर",
+    "कैंसल कर दो",
+    "कैंसिल कर दो",
+    "कैंसल कर दीजिए",
+    "कैंसिल कर दीजिए",
+    "कैंसल करवा दो",
+    "कैंसिल करवा दो",
     "रद्द",
+    "रद्द कर",
+    "रद्द कर दो",
+    "रद्द कर दीजिए",
     "अपॉइंटमेंट कैंसल",
-    "बुकिंग कैंसल"
+    "अपॉइंटमेंट कैंसिल",
+    "अपॉइंटमेंट केंसल",
+    "अपॉइंटमेंट रद्द",
+    "अपॉइंटमेंट हटाओ",
+    "अपॉइंटमेंट हटा दो",
+    "अपॉइंटमेंट नहीं चाहिए",
+    "बुकिंग कैंसल",
+    "बुकिंग कैंसिल",
+    "बुकिंग केंसल",
+    "बुकिंग रद्द",
+    "बुकिंग हटा दो",
+    "बुकिंग नहीं चाहिए",
+    "मेरी अपॉइंटमेंट कैंसल",
+    "मेरी अपॉइंटमेंट कैंसिल",
+    "मेरी बुकिंग कैंसल",
+    "मेरी बुकिंग कैंसिल",
+    "20 अप्रैल वाली कैंसल",
+    "20 अप्रैल वाली कैंसिल",
+    "अप्रैल वाली कैंसल",
+    "अप्रैल वाली कैंसिल",
+    "कैंसल",
+    "कैंसिल",
+    "केंसल",
+    "कैनसल",
+    "कैनसिल",
+    "रद्द",
+    "कैंसल कर",
+    "कैंसिल कर",
+    "केंसल कर",
+    "अपॉइंटमेंट कैंसल",
+    "अपॉइंटमेंट कैंसिल",
+    "अपॉइंटमेंट केंसल",
+    "बुकिंग कैंसल",
+    "बुकिंग कैंसिल",
+    "बुकिंग केंसल"
   ].some((phrase) => normalizedTranscript.includes(phrase));
 }
 
@@ -479,6 +804,18 @@ const SPECIALIZATION_ALIASES: Record<string, string[]> = {
     "general doctor",
     "family doctor",
     "medicine",
+    "medical",
+    "md",
+    "mbbs",
+    "fever doctor",
+    "normal doctor",
+    "regular doctor",
+    "जनरल",
+    "जनरल मेडिसिन",
+    "फिजिशियन",
+    "मेडिसिन",
+    "बुखार",
+    "साधारण डॉक्टर",
     "मेडिसिन",
     "जनरल",
     "जनरल मेडिसिन",
@@ -490,6 +827,16 @@ const SPECIALIZATION_ALIASES: Record<string, string[]> = {
     "cardiologist",
     "heart specialist",
     "cardio",
+    "heart",
+    "heart doctor",
+    "cardiac",
+    "कार्डियोलॉजी",
+    "कार्डियोलॉजिस्ट",
+    "हार्ट",
+    "हार्ट डॉक्टर",
+    "हृदय",
+    "दिल",
+    "दिल के डॉक्टर",
     "कार्डियोलॉजी",
     "कार्डियोलॉजिस्ट",
     "हार्ट स्पेशलिस्ट"
@@ -499,12 +846,43 @@ const SPECIALIZATION_ALIASES: Record<string, string[]> = {
     "dermatologist",
     "skin specialist",
     "skin",
+    "skin doctor",
+    "derma",
+    "त्वचा",
+    "स्किन",
+    "स्किन डॉक्टर",
+    "डर्मेटोलॉजी",
+    "डर्मेटोलॉजिस्ट",
+    "चमड़ी",
+    "चर्म रोग",
     "डर्मेटोलॉजी",
     "डर्मेटोलॉजिस्ट",
     "स्किन स्पेशलिस्ट",
     "स्किन",
     "त्वचा",
     "मुड्ड पीब्रोलॉजी"
+  ],
+  Oncologist: [
+    "oncologist",
+    "oncology",
+    "onco",
+    "cancer",
+    "cancer specialist",
+    "cancer doctor",
+    "tumor doctor",
+    "tumour doctor",
+    "chemo doctor",
+    "कीमो",
+    "कैंसर डॉक्टर",
+    "ट्यूमर",
+    "ओंकेलॉजिस्ट",
+    "ओन्कोलॉजिस्ट",
+    "ऑन्कोलॉजिस्ट",
+    "ऑन्कोलॉजी",
+    "ओंकोलॉजी",
+    "कैंसर",
+    "कॅन्सर",
+    "कैंसर स्पेशलिस्ट"
   ]
 };
 
@@ -561,7 +939,10 @@ function mapSpecialization(normalizedTranscript: string, runtimeDoctors: Runtime
 
 function mapDoctorPreference(normalizedTranscript: string, session: DemoSessionRecord, runtimeDoctors: RuntimeDoctor[]): { doctorPreference: string; selectedDoctor: string; doctorId: string | null } | null {
   const doctorList = runtimeDoctors.length > 0 ? runtimeDoctors : FALLBACK_DOCTORS;
-  const exactDoctor = doctorList.find((doctor) => buildDoctorAliases(doctor).some((alias) => normalizedTranscript.includes(alias)));
+  const matches = rankDoctorMatches(normalizedTranscript, doctorList);
+  const exactDoctor = getSurnameOnlyAmbiguousDoctorMatches(normalizedTranscript, doctorList).length > 0 || getAmbiguousDoctorMatches(matches).length > 0
+    ? null
+    : matches[0]?.doctor ?? null;
 
   if (exactDoctor) {
     return {
@@ -582,6 +963,172 @@ function mapDoctorPreference(normalizedTranscript: string, session: DemoSessionR
   }
 
   return null;
+}
+
+function rankDoctorMatches(normalizedTranscript: string, doctorList: RuntimeDoctor[]): Array<{ doctor: RuntimeDoctor; score: number }> {
+  return doctorList
+    .map((doctor) => ({ doctor, score: doctorMatchScore(doctor, normalizedTranscript) }))
+    .filter((match) => match.score > 0)
+    .sort((left, right) => right.score - left.score);
+}
+
+function getAmbiguousDoctorMatches(matches: Array<{ doctor: RuntimeDoctor; score: number }>): RuntimeDoctor[] {
+  if (matches.length < 2) {
+    return [];
+  }
+
+  const topScore = matches[0].score;
+  const tiedMatches = matches.filter((match) => match.score === topScore);
+
+  return tiedMatches.length > 1 ? tiedMatches.map((match) => match.doctor) : [];
+}
+
+function mapAmbiguousDoctorPreference(normalizedTranscript: string, runtimeDoctors: RuntimeDoctor[]): RuntimeDoctor[] {
+  const doctorList = runtimeDoctors.length > 0 ? runtimeDoctors : FALLBACK_DOCTORS;
+  const surnameMatches = getSurnameOnlyAmbiguousDoctorMatches(normalizedTranscript, doctorList);
+  return surnameMatches.length > 0 ? surnameMatches : getAmbiguousDoctorMatches(rankDoctorMatches(normalizedTranscript, doctorList));
+}
+
+function buildDoctorDisambiguationPrompt(doctors: RuntimeDoctor[]): string {
+  const options = doctors.map((doctor) => `${doctor.name} (${doctor.specialization})`);
+  const lastOption = options.pop();
+  const optionText = options.length > 0 ? `${options.join(", ")} aur ${lastOption}` : lastOption;
+  const sharedLastName = commonDoctorLastName(doctors);
+
+  if (sharedLastName) {
+    return `Batayiye, kaunse ${sharedLastName} doctor se appointment leni hai? Humare yaha ${optionText} available hain.`;
+  }
+
+  return `Batayiye, kaunse doctor se appointment leni hai? Humare yaha ${optionText} available hain.`;
+}
+
+function commonDoctorLastName(doctors: RuntimeDoctor[]): string | null {
+  const lastNames = doctors
+    .map((doctor) => doctor.name.replace(/^dr\.?\s+/i, "").trim().split(/\s+/).filter(Boolean).pop() ?? "")
+    .filter(Boolean);
+
+  if (lastNames.length < 2) {
+    return null;
+  }
+
+  const first = lastNames[0].toLowerCase();
+  return lastNames.every((name) => name.toLowerCase() === first) ? lastNames[0] : null;
+}
+
+function getSurnameOnlyAmbiguousDoctorMatches(normalizedTranscript: string, doctorList: RuntimeDoctor[]): RuntimeDoctor[] {
+  const transcript = normalizeDoctorMatchText(normalizedTranscript);
+  const doctorsByLastName = new Map<string, RuntimeDoctor[]>();
+
+  for (const doctor of doctorList) {
+    const lastName = doctorLastName(doctor);
+    if (!lastName) {
+      continue;
+    }
+
+    doctorsByLastName.set(lastName, [...(doctorsByLastName.get(lastName) ?? []), doctor]);
+  }
+
+  for (const doctors of doctorsByLastName.values()) {
+    if (doctors.length < 2) {
+      continue;
+    }
+
+    const lastNameAliases = doctorPartAliases(doctorLastName(doctors[0]) ?? "");
+    if (!lastNameAliases.some((alias) => transcriptHasToken(transcript, alias))) {
+      continue;
+    }
+
+    const firstNameMatches = doctors.filter((doctor) => {
+      const firstName = doctorFirstName(doctor);
+      return firstName && doctorPartAliases(firstName).some((alias) => transcriptHasToken(transcript, alias));
+    });
+
+    if (firstNameMatches.length === 0) {
+      return doctors;
+    }
+  }
+
+  return [];
+}
+
+function doctorFirstName(doctor: RuntimeDoctor): string | null {
+  return doctor.name.replace(/^dr\.?\s+/i, "").trim().split(/\s+/).filter(Boolean)[0] ?? null;
+}
+
+function doctorLastName(doctor: RuntimeDoctor): string | null {
+  const parts = doctor.name.replace(/^dr\.?\s+/i, "").trim().split(/\s+/).filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : null;
+}
+
+function doctorPartAliases(part: string): string[] {
+  const normalized = part.toLowerCase();
+  return [normalized, ...(DEVANAGARI_NAME_ALIASES[normalized] ?? [])]
+    .map((alias) => normalizeDoctorMatchText(alias))
+    .filter(Boolean);
+}
+
+function transcriptHasToken(transcript: string, token: string): boolean {
+  return new RegExp(`(?:^|\\s)${escapeRegExp(token)}(?:\\s|$)`, "iu").test(transcript);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const DEVANAGARI_NAME_ALIASES: Record<string, string[]> = {
+  ananya: ["अनन्या", "अनया"],
+  sharma: ["शर्मा"],
+  rohan: ["रोहन"],
+  patel: ["पटेल"],
+  meera: ["मीरा"],
+  shah: ["शाह"],
+  pankaj: ["पंकज"],
+  paresh: ["परेश"]
+};
+
+function normalizeDoctorMatchText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[.,!?;:।]/g, " ")
+    .replace(/\b(dr|doctor)\b/g, " ")
+    .replace(/डॉ\.?/gu, " ")
+    .replace(/डॉक्टर/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function doctorMatchScore(doctor: RuntimeDoctor, normalizedTranscript: string): number {
+  const transcript = normalizeDoctorMatchText(normalizedTranscript);
+
+  return buildDoctorAliases(doctor).reduce((bestScore, alias) => {
+    const normalizedAlias = normalizeDoctorMatchText(alias);
+
+    if (!normalizedAlias) {
+      return bestScore;
+    }
+
+    const aliasTokens = normalizedAlias.split(" ").filter(Boolean);
+
+    if (transcript.includes(normalizedAlias)) {
+      return Math.max(bestScore, aliasTokens.length >= 2 ? 100 + normalizedAlias.length : 20 + normalizedAlias.length);
+    }
+
+    if (aliasTokens.length < 2) {
+      return bestScore;
+    }
+
+    let cursor = 0;
+    const orderedTokenMatch = aliasTokens.every((token) => {
+      const foundAt = transcript.indexOf(token, cursor);
+      if (foundAt === -1) {
+        return false;
+      }
+      cursor = foundAt + token.length;
+      return true;
+    });
+
+    return orderedTokenMatch ? Math.max(bestScore, 80 + normalizedAlias.length) : bestScore;
+  }, 0);
 }
 
 function isEarliestAvailableDoctorRequest(normalizedTranscript: string): boolean {
@@ -608,14 +1155,34 @@ function buildDoctorAliases(doctor: RuntimeDoctor): string[] {
   const noTitle = rawName.replace(/^dr\.?\s+/, "").trim();
   const nameParts = noTitle.split(/\s+/).filter(Boolean);
   const aliases = new Set<string>([rawName, noTitle, `dr ${noTitle}`, ...nameParts]);
+  const devanagariParts = nameParts
+    .map((part) => DEVANAGARI_NAME_ALIASES[part]?.[0] ?? null)
+    .filter((part): part is string => Boolean(part));
+
+  if (devanagariParts.length === nameParts.length && devanagariParts.length > 0) {
+    const devanagariName = devanagariParts.join(" ");
+    aliases.add(devanagariName);
+    aliases.add(`डॉक्टर ${devanagariName}`);
+    aliases.add(`डॉ ${devanagariName}`);
+    if (devanagariParts[0]) {
+      aliases.add(devanagariParts[0]);
+    }
+  }
 
   if (doctor.doctorId === "doctor-1") {
     aliases.add("ananya sharma");
     aliases.add("ananya");
     aliases.add("doctor ananya");
+    aliases.add("dr ananya");
+    aliases.add("ananya doctor");
+    aliases.add("ananya ji");
+    aliases.add("ananya mam");
+    aliases.add("ananya madam");
     aliases.add("अनन्या शर्मा");
     aliases.add("अनन्या");
     aliases.add("अनन्या सर");
+    aliases.add("अनन्या डॉक्टर");
+    aliases.add("डॉ अनन्या शर्मा");
     aliases.add("अनया शर्मा");
     aliases.add("अनया");
     aliases.add("डॉक्टर अनन्या");
@@ -626,8 +1193,14 @@ function buildDoctorAliases(doctor: RuntimeDoctor): string[] {
     aliases.add("rohan patel");
     aliases.add("rohan");
     aliases.add("doctor rohan");
+    aliases.add("dr rohan");
+    aliases.add("rohan doctor");
+    aliases.add("rohan patel doctor");
+    aliases.add("rohan sir");
     aliases.add("रोहन पटेल");
     aliases.add("रोहन");
+    aliases.add("रोहन डॉक्टर");
+    aliases.add("डॉ रोहन पटेल");
     aliases.add("डॉक्टर रोहन");
   }
 
@@ -635,9 +1208,43 @@ function buildDoctorAliases(doctor: RuntimeDoctor): string[] {
     aliases.add("meera shah");
     aliases.add("meera");
     aliases.add("doctor meera");
+    aliases.add("dr meera");
+    aliases.add("meera doctor");
+    aliases.add("meera shah doctor");
+    aliases.add("meera mam");
+    aliases.add("meera madam");
     aliases.add("मीरा शाह");
     aliases.add("मीरा");
+    aliases.add("मीरा डॉक्टर");
+    aliases.add("डॉ मीरा शाह");
     aliases.add("डॉक्टर मीरा");
+  }
+
+  if (noTitle.includes("pankaj") || noTitle.includes("paresh") || (noTitle.includes("shah") && doctor.specialization.toLowerCase().includes("oncolog"))) {
+    aliases.add("pankaj shah");
+    aliases.add("pankaj");
+    aliases.add("doctor pankaj");
+    aliases.add("dr pankaj");
+    aliases.add("pankaj doctor");
+    aliases.add("pankaj shah doctor");
+    aliases.add("pankaj sir");
+    aliases.add("paresh shah");
+    aliases.add("paresh");
+    aliases.add("doctor paresh");
+    aliases.add("dr paresh");
+    aliases.add("paresh doctor");
+    aliases.add("paresh shah doctor");
+    aliases.add("paresh sir");
+    aliases.add("pares shah");
+    aliases.add("parish shah");
+    aliases.add("पंकज शाह");
+    aliases.add("पंकज");
+    aliases.add("डॉ पंकज शाह");
+    aliases.add("डॉक्टर पंकज");
+    aliases.add("परेश शाह");
+    aliases.add("परेश");
+    aliases.add("डॉ परेश शाह");
+    aliases.add("डॉक्टर परेश");
   }
 
   return Array.from(aliases);
@@ -675,7 +1282,10 @@ function extractPatientName(transcript: string): string | null {
     const match = transcript.match(pattern);
 
     if (match?.[1]) {
-      return match[1].trim();
+      const candidate = cleanExtractedPatientName(match[1]);
+      if (candidate) {
+        return candidate;
+      }
     }
   }
 
@@ -692,11 +1302,26 @@ function extractPatientName(transcript: string): string | null {
 
   const words = cleaned.split(" ").filter(Boolean);
 
-  if (words.length >= 1 && words.length <= 3) {
-    return cleaned;
+  return words.length >= 1 && words.length <= 3 ? cleanExtractedPatientName(cleaned) : null;
+}
+
+function cleanExtractedPatientName(value: string): string | null {
+  const candidate = String(value || "")
+    .replace(/[.,!?;:।]/g, " ")
+    .replace(/\b(ji|jee|haan|ha|mera|naam|name|my|is|hai|patient)\b/giu, " ")
+    .replace(/\b(जी|हाँ|हां|मेरा|नाम|है|मैं|मे|में)\b/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!candidate || /\d/.test(candidate)) {
+    return null;
   }
 
-  return null;
+  const words = candidate.split(" ").filter(Boolean);
+  const looksLikeCueOnly = /^(mera|naam|name|my|patient|जी|मेरा|नाम)$/iu.test(candidate);
+  const looksLikeNameOnly = words.length <= 3 && !/(appointment|doctor|mobile|number|slot|book|बुक|डॉक्टर|अपॉइंटमेंट|अपोइंटमेंट|मोबाइल|नंबर|स्लॉट)/iu.test(candidate);
+
+  return !looksLikeCueOnly && looksLikeNameOnly ? candidate : null;
 }
 
 function cleanPatientName(transcript: string): string | null {
@@ -717,18 +1342,8 @@ function cleanPatientName(transcript: string): string | null {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!candidate) {
-    return null;
-  }
-
-  const words = candidate.split(" ").filter(Boolean);
-  const looksLikeNameOnly = words.length <= 3 && !/(appointment|doctor|mobile|number|slot|बुक|डॉक्टर|अपॉइंटमेंट|मोबाइल|नंबर|स्लॉट)/iu.test(candidate);
-
-  if ((hasNameCue || words.length === 1) && looksLikeNameOnly) {
-    return candidate;
-  }
-
-  return null;
+  const cleaned = cleanExtractedPatientName(candidate);
+  return cleaned && (hasNameCue || cleaned.split(" ").filter(Boolean).length === 1) ? cleaned : null;
 }
 
 function extractMobile(transcript: string): string | null {
@@ -809,6 +1424,53 @@ function resolveMobile(transcript: string, callerNumber?: string | null, existin
   }
 
   return spokenDigits.length === 10 ? spokenDigits : null;
+}
+
+function extractMobileDigitFragment(transcript: string): string {
+  return normalizeSpokenDigits(transcript)
+    .replace(/[\u0966-\u096F]/g, (digit) => String("\u0966\u0967\u0968\u0969\u096A\u096B\u096C\u096D\u096E\u096F".indexOf(digit)))
+    .replace(/\D/g, "");
+}
+
+function buildPartialMobilePrompt(digits: string): string {
+  return `${digits} mila. Baaki ${10 - digits.length} digit bata dijiye.`;
+}
+
+function resolvePartialMobile(
+  transcript: string,
+  session: DemoSessionRecord
+): { mobile: string; partialMobileDigits: null } | { partialMobileDigits: string; reply: string } | null {
+  const fragment = extractMobileDigitFragment(transcript);
+  const existing = (session.partialMobileDigits ?? "").replace(/\D/g, "");
+
+  if (!fragment) {
+    return null;
+  }
+
+  if (fragment.length >= 10) {
+    return { mobile: normalizePhoneLast10(fragment) ?? fragment.slice(-10), partialMobileDigits: null };
+  }
+
+  if (!existing && fragment.length < 4) {
+    return null;
+  }
+
+  const shouldRestartPartial =
+    existing
+    && fragment.length >= existing.length
+    && !fragment.startsWith(existing)
+    && !existing.startsWith(fragment)
+    && `${existing}${fragment}`.length < 10;
+  const combined = shouldRestartPartial ? fragment : `${existing}${fragment}`;
+
+  if (combined.length >= 10) {
+    return { mobile: combined.slice(0, 10), partialMobileDigits: null };
+  }
+
+  return {
+    partialMobileDigits: combined,
+    reply: buildPartialMobilePrompt(combined)
+  };
 }
 
 function normalizeSpokenDigits(transcript: string): string {
@@ -903,7 +1565,13 @@ function mapPatientType(normalizedTranscript: string): string | null {
     return "new patient";
   }
 
-  if (normalizedTranscript.includes("follow-up") || normalizedTranscript.includes("फॉलो अप")) {
+  if (
+    normalizedTranscript.includes("follow-up")
+    || normalizedTranscript.includes("follow up")
+    || normalizedTranscript.includes("follow")
+    || normalizedTranscript.includes("फॉलो अप")
+    || normalizedTranscript.includes("फॉलो")
+  ) {
     return "follow-up";
   }
 
@@ -1151,13 +1819,30 @@ function mapDateFlexible(normalizedTranscript: string): string | null {
         "wedensday",
         "wednsday",
         "wensday",
+        "wensde",
+        "wensdey",
+        "wensde ko",
         "wenzday",
         "venusday",
         "vensday",
+        "vensde",
+        "vensde ko",
         "venasday",
+        "wedensde",
+        "wedensdey",
         "wed",
         "budhvar",
         "budhwar",
+        "\u092c\u0941\u0927\u0935\u093e\u0930",
+        "\u092c\u0941\u0927\u0935\u093e\u0930 \u0915\u094b",
+        "\u0935\u0928\u094d\u0938\u0921\u0947",
+        "\u0935\u0947\u0921\u0902\u0938\u0921\u0947",
+        "\u0935\u0947\u0921\u0928\u0947\u0938\u0921\u0947",
+        "\u0935\u0947\u0921\u0928\u0938\u0921\u0947",
+        "\u0935\u0947\u0928\u0938\u0921\u0947",
+        "\u0935\u0947\u0928\u0938\u0921\u0947 \u0915\u094b",
+        "\u0935\u0947\u0928\u094d\u0938\u0921\u0947",
+        "\u0935\u0947\u0902\u0938\u0921\u0947",
         "बुधवार",
         "बुधवार को",
         "वेडनेसडे",
@@ -1203,14 +1888,46 @@ function mapDateFlexible(normalizedTranscript: string): string | null {
 }
 
 function mapConfirmationFlexible(normalizedTranscript: string): "confirm" | "change_doctor" | "change_time" | "cancel" | null {
+  if (matchCancelAppointmentIntent(normalizedTranscript)) {
+    return "cancel";
+  }
+
   const mapped = mapConfirmation(normalizedTranscript);
 
   if (mapped) {
     return mapped;
   }
 
+  if ([
+    "yup",
+    "yeah",
+    "ji",
+    "ji haan",
+    "theek hai",
+    "thik hai",
+    "sahi hai",
+    "kar do",
+    "kar dijiye",
+    "confirm kar do",
+    "haan kar do",
+    "जी",
+    "जी हाँ",
+    "जी हां",
+    "ठीक है",
+    "सही है",
+    "कर दो",
+    "कर दीजिए",
+    "कन्फर्म कर दो"
+  ].some((phrase) => normalizedTranscript.includes(phrase))) {
+    return "confirm";
+  }
+
   if (["haan", "ha", "han", "yes", "ok", "okay", "हाँ", "हां", "सही है"].some((phrase) => normalizedTranscript.includes(phrase))) {
     return "confirm";
+  }
+
+  if (matchCancelAppointmentIntent(normalizedTranscript)) {
+    return "cancel";
   }
 
   return null;
@@ -1231,7 +1948,95 @@ function wantsEarliestSlot(normalizedTranscript: string): boolean {
   ].some((phrase) => normalizedTranscript.includes(phrase));
 }
 
+function wantsAlternativeSlot(normalizedTranscript: string): boolean {
+  return [
+    "second slot",
+    "another slot",
+    "other slot",
+    "different slot",
+    "next slot",
+    "dusra slot",
+    "doosra slot",
+    "दूसरा स्लॉट",
+    "दुसरा स्लॉट",
+    "अगला स्लॉट",
+    "और स्लॉट",
+    "slot chahiye",
+    "स्लॉट चाहिए",
+    "स्लॉग",
+    "slot available",
+    "स्लॉट अवेलेबल",
+    "दूसरे स्लॉट",
+    "दुसरे स्लॉट",
+    "दूसरे स्लॉट्स",
+    "दुसरे स्लॉट्स",
+    "दूसरा स्लॉट बताइए",
+    "दूसरे स्लॉट्स बताइए",
+    "और कोई स्लॉट",
+    "कोई स्लॉट"
+  ].some((phrase) => normalizedTranscript.includes(phrase));
+}
+
 function mapYesNo(normalizedTranscript: string): "yes" | "no" | null {
+  if ([
+    "nope",
+    "nah",
+    "nai",
+    "nahi chahiye",
+    "mat karo",
+    "mat kijiye",
+    "rehne do",
+    "chhodo",
+    "नहीं चाहिए",
+    "मत करो",
+    "मत कीजिए",
+    "रहने दो",
+    "छोड़ो"
+  ].some((phrase) => normalizedTranscript.includes(phrase))) {
+    return "no";
+  }
+
+  if (["नहीं", "नही", "ना", "मत"].some((phrase) => normalizedTranscript.includes(phrase))) {
+    return "no";
+  }
+
+  if ([
+    "same number",
+    "this number",
+    "yahi number",
+    "yehi number",
+    "isi number",
+    "yup",
+    "yeah",
+    "ji",
+    "ji haan",
+    "theek hai",
+    "thik hai",
+    "sahi hai",
+    "kar do",
+    "kar dijiye",
+    "chalega",
+    "chal jayega",
+    "जी",
+    "जी हाँ",
+    "जी हां",
+    "ठीक है",
+    "सही है",
+    "कर दो",
+    "कर दीजिए",
+    "चलेगा",
+    "जी",
+    "जी हाँ",
+    "जी हां",
+    "हाँ",
+    "हां",
+    "यही",
+    "यही नंबर",
+    "इसी नंबर",
+    "मेरा कॉन्टैक्ट नंबर"
+  ].some((phrase) => normalizedTranscript.includes(phrase))) {
+    return "yes";
+  }
   if (["no", "nahi", "nahin", "नहीं", "नही", "ना", "मत", "alternate", "different", "दूसरा", "अलग"].some((phrase) => normalizedTranscript.includes(phrase))) {
     return "no";
   }
@@ -1266,6 +2071,27 @@ function mapYesNo(normalizedTranscript: string): "yes" | "no" | null {
   }
 
   return null;
+}
+
+function hasEndConversationIntent(normalizedTranscript: string): boolean {
+  return [
+    "no thanks",
+    "no thank you",
+    "nahi thanks",
+    "nahi thank you",
+    "nahi dhanyavaad",
+    "nahin dhanyavaad",
+    "dhanyavaad",
+    "thank you",
+    "thanks",
+    "bye",
+    "goodbye",
+    "नहीं धन्यवाद",
+    "नही धन्यवाद",
+    "धन्यवाद",
+    "थैंक यू",
+    "बस"
+  ].some((phrase) => normalizedTranscript.includes(phrase));
 }
 
 function buildConfirmationSummary(session: DemoSessionRecord, prompts: ConversationPrompts): string {
@@ -1326,7 +2152,51 @@ function formatTimeLabel(minutes: number): string {
   return `${hours12}:${String(mins).padStart(2, "0")} ${suffix}`;
 }
 
+function buildTimeLabel(hoursInput: number, minutesInput: number, marker: string | undefined): string | null {
+  let hours = hoursInput;
+  const minutes = minutesInput;
+
+  if (hours < 1 || hours > 12 || minutes > 59) return null;
+
+  if (
+    marker === "pm"
+    || (!marker && hours >= 12)
+    || (!marker && hours >= 1 && hours <= 5)
+    || (marker === "baje" && hours >= 12)
+    || (marker === "baje" && hours >= 1 && hours <= 5)
+  ) {
+    if (hours < 12) hours += 12;
+  } else if (marker === "am" && hours === 12) {
+    hours = 0;
+  }
+
+  return formatTimeLabel(hours * 60 + minutes);
+}
+
 function extractExactTimeLabel(normalizedTranscript: string): string | null {
+  const speechTimeText = normalizedTranscript
+    .replace(/[\u0966-\u096F]/g, (digit) => String("\u0966\u0967\u0968\u0969\u096A\u096B\u096C\u096D\u096E\u096F".indexOf(digit)))
+    .replace(/a\s*m|am|\u090f\s*\u090f\u092e|\u090f\u090f\u092e|\u090f\s*\u092e|\u090f\u092e/giu, " am ")
+    .replace(/p\s*m|pm|\u092a\u0940\s*\u090f\u092e|\u092a\u0940\u090f\u092e|\u092a\u0940\s*\u092f\u092e|\u092a\u0940\u092f\u092e|\u092c\u0940\s*\u090f\u092e|\u092c\u0940\u090f\u092e|\u092c\u0940\s*\u092e|\u092c\u0940\u092e/giu, " pm ")
+    .replace(/\u092c\u091c\u0947|baje|o clock/giu, " baje ")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const compactMatch = speechTimeText.match(/\b(\d{3,4})\s*(am|pm|baje)?\b/i);
+  if (compactMatch) {
+    const digits = compactMatch[1];
+    const label = buildTimeLabel(Number(digits.slice(0, -2)), Number(digits.slice(-2)), compactMatch[2]);
+    if (label) return label;
+  }
+
+  const match = speechTimeText.match(/\b(\d{1,2})(?:\s*[:.]\s*(\d{2})|\s+(\d{2}))?\s*(am|pm|baje)?\b/i);
+  if (!match) return null;
+
+  return buildTimeLabel(Number(match[1]), Number(match[2] ?? match[3] ?? "0"), match[4]);
+}
+
+function extractExactTimeLabelLegacy(normalizedTranscript: string): string | null {
   const text = normalizedTranscript
     .replace(/[०-९]/g, (digit) => String("०१२३४५६७८९".indexOf(digit)))
     .replace(/\b(a\s*m|ए\s*एम|एएम)\b/giu, "am")
@@ -1416,9 +2286,111 @@ function buildAppointmentSpeech(appointment: SessionAppointmentSnapshot, runtime
   return `${appointment.appointmentDate ?? "selected slot"} par Dr. ${doctorName}`;
 }
 
+function orderedSlotsByTime(slots: string[]): string[] {
+  return [...slots].sort((left, right) => {
+    const leftMinutes = parseSlotMinutes(left);
+    const rightMinutes = parseSlotMinutes(right);
+    if (leftMinutes === null && rightMinutes === null) return 0;
+    if (leftMinutes === null) return 1;
+    if (rightMinutes === null) return -1;
+    return leftMinutes - rightMinutes;
+  });
+}
+
+function wantsLaterOfferedSlot(normalizedTranscript: string): boolean {
+  return [
+    "baad wala",
+    "baad vala",
+    "bad wala",
+    "bad vala",
+    "baad wala jo",
+    "later one",
+    "later slot",
+    "last slot",
+    "second slot",
+    "dusra",
+    "doosra",
+    "dusra wala",
+    "doosra wala",
+    "afternoon wala",
+    "afternoon ka",
+    "\u092c\u093e\u0926 \u0935\u093e\u0932\u093e",
+    "\u092c\u093e\u0926 \u0935\u093e\u0932\u093e \u091c\u094b",
+    "\u0926\u0942\u0938\u0930\u093e",
+    "\u0926\u0941\u0938\u0930\u093e",
+    "\u0926\u0942\u0938\u0930\u093e \u0935\u093e\u0932\u093e",
+    "\u0906\u092b\u094d\u091f\u0930\u0928\u0942\u0928 \u0935\u093e\u0932\u093e",
+    "\u0906\u0916\u093f\u0930\u0940",
+    "\u0932\u093e\u0938\u094d\u091f"
+  ].some((phrase) => normalizedTranscript.includes(phrase));
+}
+
+function wantsEarlierOfferedSlot(normalizedTranscript: string): boolean {
+  return [
+    "pehla",
+    "pehla wala",
+    "first slot",
+    "first one",
+    "morning wala",
+    "morning ka",
+    "subah wala",
+    "\u092a\u0939\u0932\u093e",
+    "\u092a\u0939\u0932\u0947 \u0935\u093e\u0932\u093e",
+    "\u0938\u0941\u092c\u0939 \u0935\u093e\u0932\u093e",
+    "\u092e\u0949\u0930\u094d\u0928\u093f\u0902\u0917 \u0935\u093e\u0932\u093e"
+  ].some((phrase) => normalizedTranscript.includes(phrase));
+}
+
+function requestedSpokenHour(normalizedTranscript: string): number | null {
+  const hourAliases: Array<{ hour: number; aliases: string[] }> = [
+    { hour: 1, aliases: ["one", "wan", "won", "\u0935\u0928", "\u090f\u0915"] },
+    { hour: 2, aliases: ["two", "too", "tu", "\u091f\u0942", "\u0926\u094b"] },
+    { hour: 3, aliases: ["three", "\u0925\u094d\u0930\u0940", "\u0924\u0940\u0928"] },
+    { hour: 4, aliases: ["four", "for", "\u092b\u094b\u0930", "\u091a\u093e\u0930"] },
+    { hour: 5, aliases: ["five", "\u092b\u093e\u0907\u0935", "\u092a\u093e\u0902\u091a"] },
+    { hour: 10, aliases: ["ten", "\u091f\u0947\u0928", "\u0926\u0938"] },
+    { hour: 12, aliases: ["twelve", "\u091f\u094d\u0935\u0947\u0932\u094d\u0935", "\u092c\u093e\u0930\u0939"] }
+  ];
+
+  for (const entry of hourAliases) {
+    if (entry.aliases.some((alias) => normalizedTranscript.includes(alias))) {
+      return entry.hour;
+    }
+  }
+
+  return null;
+}
+
+function matchOfferedSlotByHour(normalizedTranscript: string, slots: string[]): string | null {
+  const requestedHour = requestedSpokenHour(normalizedTranscript);
+  if (requestedHour === null) return null;
+
+  const matches = slots.filter((slot) => {
+    const minutes = parseSlotMinutes(slot);
+    if (minutes === null) return false;
+    const slotHour = Math.floor(minutes / 60) % 12 || 12;
+    return slotHour === requestedHour;
+  });
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
 function matchOfferedSlot(normalizedTranscript: string, offeredSlots: string[] | undefined): string | null {
   const slots = offeredSlots ?? [];
   if (!slots.length) return null;
+
+  const orderedSlots = orderedSlotsByTime(slots);
+
+  if (wantsLaterOfferedSlot(normalizedTranscript)) {
+    return orderedSlots[orderedSlots.length - 1] ?? null;
+  }
+
+  if (wantsEarlierOfferedSlot(normalizedTranscript)) {
+    return orderedSlots[0] ?? null;
+  }
+
+  const spokenHourSlot = matchOfferedSlotByHour(normalizedTranscript, slots);
+  if (spokenHourSlot) return spokenHourSlot;
 
   const requested = mapTimeFlexible(normalizedTranscript);
   if (!requested) return null;
@@ -1430,7 +2402,120 @@ function matchOfferedSlot(normalizedTranscript: string, offeredSlots: string[] |
   const requestedMinutes = parseSlotMinutes(requested);
   if (requestedMinutes === null) return null;
 
-  return slots.find((slot) => parseSlotMinutes(slot) === requestedMinutes) ?? null;
+  const exactSlot = slots.find((slot) => parseSlotMinutes(slot) === requestedMinutes);
+  if (exactSlot) return exactSlot;
+
+  const requestedHour = Math.floor(requestedMinutes / 60) % 12 || 12;
+  const sameHourSlots = slots.filter((slot) => {
+    const slotMinutes = parseSlotMinutes(slot);
+    return slotMinutes !== null && (Math.floor(slotMinutes / 60) % 12 || 12) === requestedHour;
+  });
+
+  return sameHourSlots.length === 1 ? sameHourSlots[0] : null;
+}
+
+function rescheduleAlternativeSlots(session: DemoSessionRecord): string[] {
+  const currentSlot = session.reschedule_confirmed_slot?.time ?? session.preferredTime ?? null;
+  const currentMinutes = parseSlotMinutes(currentSlot);
+  return (session.reschedule_available_slots ?? []).filter((slot) => {
+    const slotMinutes = parseSlotMinutes(slot);
+    return currentMinutes === null || slotMinutes === null || slotMinutes !== currentMinutes;
+  });
+}
+
+function buildRescheduleSlotOptionsReply(day: string | null | undefined, slots: string[]): string {
+  const slotText = slotChoiceText(slots);
+  return `${day ?? "selected day"} ko ${slotText} available hai. Kaunsa slot rakh doon?`;
+}
+
+function nextAlternativeSlot(session: DemoSessionRecord): string | null {
+  const slots = session.availabilityOfferedSlots ?? [];
+  if (!slots.length) {
+    return null;
+  }
+
+  const currentMinutes = parseSlotMinutes(session.preferredTime);
+  const alternatives = slots.filter((slot) => parseSlotMinutes(slot) !== currentMinutes);
+  return alternatives[0] ?? null;
+}
+
+function resolveBookingSlotCorrection(
+  session: DemoSessionRecord,
+  normalizedTranscript: string,
+  runtimeDoctors: RuntimeDoctor[],
+  appointments: AppointmentSnapshot[],
+  prompts: ConversationPrompts,
+  intelligence: Required<IntelligenceSettings>
+): { session: DemoSessionRecord; reply: string; stage: BookingStage; action: string } | null {
+  if (!session.selectedDoctor || !session.preferredDate) {
+    return null;
+  }
+
+  const requestedTime =
+    matchOfferedSlot(normalizedTranscript, session.availabilityOfferedSlots)
+    ?? (wantsAlternativeSlot(normalizedTranscript) ? nextAlternativeSlot(session) : null)
+    ?? mapTimeFlexible(normalizedTranscript);
+
+  if (!requestedTime) {
+    return null;
+  }
+
+  const selectedDoctor = runtimeDoctors.find((doctor) => doctor.name === session.selectedDoctor) ?? null;
+  const updated = updateSession(session, {
+    preferredTime: requestedTime,
+    availabilityCheckKey: null,
+    availabilityOfferedDate: null,
+    availabilityOfferedTime: null,
+    availabilityOfferedSlots: []
+  });
+  const resolution = resolveAvailability({
+    doctor: selectedDoctor as AvailabilityRuntimeDoctor | null,
+    requestedDay: updated.preferredDate,
+    requestedTime,
+    appointments,
+    prompts: prompts as AvailabilityPromptTemplates
+  });
+
+  if (!resolution) {
+    return null;
+  }
+
+  if (resolution.status === "available") {
+    const availableSession = updateSession(updated, {
+      preferredDate: resolution.selectedDate ?? updated.preferredDate,
+      preferredTime: resolution.selectedTime ?? updated.preferredTime,
+      availabilityCheckKey: resolution.checkKey,
+      availabilityOfferedSlots: resolution.offeredSlots
+    });
+    const next = askNextMissingField(availableSession, prompts, intelligence);
+
+    return {
+      session: next.session,
+      reply: `${resolution.reply} ${next.reply}`,
+      stage: next.stage,
+      action: "change_slot_available"
+    };
+  }
+
+  if (resolution.status === "time_full") {
+    const offeredDifferentDay = resolution.offeredDate && resolution.offeredDate !== updated.preferredDate;
+    const offeredSession = updateSession(updated, {
+      preferredTime: null,
+      availabilityCheckKey: resolution.checkKey,
+      availabilityOfferedDate: resolution.offeredDate ?? updated.preferredDate,
+      availabilityOfferedTime: resolution.offeredTime ?? null,
+      availabilityOfferedSlots: resolution.offeredSlots
+    });
+
+    return {
+      session: offeredSession,
+      reply: resolution.reply,
+      stage: offeredDifferentDay ? "waiting_for_date" : "waiting_for_time",
+      action: offeredDifferentDay ? "change_slot_next_day_offered" : "change_slot_time_full"
+    };
+  }
+
+  return null;
 }
 
 function buildRescheduleConfirmation(
@@ -1445,6 +2530,122 @@ function buildRescheduleConfirmation(
     slot: session.reschedule_confirmed_slot?.time ?? "selected slot",
     doctor: doctorName
   });
+}
+
+function resolveRescheduleSlotCorrection(
+  session: DemoSessionRecord,
+  normalizedTranscript: string,
+  existingBooking: SessionAppointmentSnapshot | null | undefined,
+  runtimeDoctors: RuntimeDoctor[],
+  appointments: AppointmentSnapshot[],
+  prompts: ConversationPrompts
+): { session: DemoSessionRecord; reply: string; stage: BookingStage; action: string } | null {
+  if (!existingBooking || !session.reschedule_new_day) {
+    return null;
+  }
+
+  const selectedDoctor = resolveDoctorForAppointment(existingBooking, runtimeDoctors);
+  if (!selectedDoctor) {
+    return null;
+  }
+
+  const requestedDay = mapDateFlexible(normalizedTranscript) ?? session.reschedule_new_day;
+  const requestedTime = mapTimeFlexible(normalizedTranscript);
+  const selectedSlot = requestedTime ? matchOfferedSlot(normalizedTranscript, session.reschedule_available_slots) : null;
+
+  if (selectedSlot) {
+    const updated = updateSession(session, {
+      ...appointmentSessionFields(existingBooking, runtimeDoctors, session),
+      reschedule_existing: existingBooking,
+      reschedule_new_day: requestedDay,
+      preferredDate: requestedDay,
+      preferredTime: selectedSlot,
+      reschedule_confirmed_slot: { time: selectedSlot }
+    });
+
+    return {
+      session: updated,
+      reply: buildRescheduleConfirmation(existingBooking, updated, runtimeDoctors, prompts),
+      stage: "reschedule_confirming",
+      action: "reschedule_slot_changed"
+    };
+  }
+
+  if (!requestedTime && wantsAlternativeSlot(normalizedTranscript)) {
+    const alternativeSlots = rescheduleAlternativeSlots(session);
+
+    if (alternativeSlots.length > 0) {
+      return {
+        session: updateSession(session, { reschedule_confirmed_slot: null, preferredTime: null }),
+        reply: buildRescheduleSlotOptionsReply(session.reschedule_new_day, alternativeSlots),
+        stage: "reschedule_waiting_for_new_slot",
+        action: "reschedule_list_alternative_slots"
+      };
+    }
+
+    return {
+      session,
+      reply: `${session.reschedule_new_day} ko abhi aur slots available nahi hain. ${buildRescheduleConfirmation(existingBooking, session, runtimeDoctors, prompts)}`,
+      stage: "reschedule_confirming",
+      action: "reschedule_no_alternative_slots"
+    };
+  }
+
+  if (!requestedTime) {
+    return null;
+  }
+
+  const resolution = resolveAvailability({
+    doctor: selectedDoctor as AvailabilityRuntimeDoctor,
+    requestedDay,
+    requestedTime,
+    appointments,
+    prompts: prompts as AvailabilityPromptTemplates
+  });
+
+  if (resolution?.status === "available") {
+    const resolvedSlot = resolution.selectedTime ?? resolution.offeredSlots[0] ?? requestedTime;
+    const updated = updateSession(session, {
+      ...appointmentSessionFields(existingBooking, runtimeDoctors, session),
+      reschedule_existing: existingBooking,
+      reschedule_new_day: resolution.selectedDate ?? requestedDay,
+      reschedule_available_slots: resolution.offeredSlots.length ? resolution.offeredSlots : [resolvedSlot],
+      preferredDate: resolution.selectedDate ?? requestedDay,
+      preferredTime: resolvedSlot,
+      reschedule_confirmed_slot: { time: resolvedSlot }
+    });
+
+    return {
+      session: updated,
+      reply: buildRescheduleConfirmation(existingBooking, updated, runtimeDoctors, prompts),
+      stage: "reschedule_confirming",
+      action: "reschedule_slot_changed"
+    };
+  }
+
+  if (resolution?.status === "time_full" || resolution?.status === "day_unavailable") {
+    const offeredDay = resolution.offeredDate ?? requestedDay;
+    const offeredSlots = resolution.offeredSlots;
+    const updated = updateSession(session, {
+      ...appointmentSessionFields(existingBooking, runtimeDoctors, session),
+      reschedule_existing: existingBooking,
+      reschedule_new_day: offeredDay,
+      reschedule_available_slots: offeredSlots,
+      reschedule_confirmed_slot: null,
+      preferredDate: null,
+      preferredTime: null
+    });
+    const slotFollowup = offeredSlots.length ? ` ${buildRescheduleSlotOptionsReply(offeredDay, offeredSlots)}` : "";
+
+    return {
+      session: updated,
+      reply: `${resolution.reply}${slotFollowup}`,
+      stage: offeredSlots.length ? "reschedule_waiting_for_new_slot" : "reschedule_waiting_for_new_day",
+      action: resolution.status === "time_full" ? "reschedule_requested_time_unavailable" : "reschedule_requested_day_unavailable"
+    };
+  }
+
+  return null;
 }
 
 function buildRescheduleFinal(
@@ -1689,8 +2890,15 @@ function applySmartEntities(
 
   const specialization = mapSpecialization(normalizedTranscript, runtimeDoctors);
   if (specialization && !next.selectedSpecialization) {
+    const matchingDoctors = runtimeDoctors.filter((runtimeDoctor) => runtimeDoctor.specialization === specialization.specialization);
     next = updateSession(next, {
-      selectedSpecialization: specialization.specialization
+      selectedSpecialization: specialization.specialization,
+      ...(matchingDoctors.length === 1 && !next.selectedDoctor
+        ? {
+            selectedDoctor: matchingDoctors[0].name,
+            doctorPreference: "specific_doctor"
+          }
+        : {})
     });
   }
 
@@ -1713,6 +2921,7 @@ function applySmartEntities(
   if (mobile && !next.contactNumber) {
     next = updateSession(next, {
       contactNumber: mobile,
+      partialMobileDigits: null,
       bookingContactConfirmed: true,
       bookingContactConfirmationPending: false
     });
@@ -1791,6 +3000,7 @@ function resolveAvailabilityFirstStep(
   }
 
   if (resolution.status === "time_full") {
+    const offeredDifferentDay = resolution.offeredDate && resolution.offeredDate !== session.preferredDate;
     const updated = updateSession(session, {
       preferredTime: null,
       availabilityCheckKey: resolution.checkKey,
@@ -1801,8 +3011,8 @@ function resolveAvailabilityFirstStep(
     return {
       session: updated,
       reply: resolution.reply,
-      stage: "waiting_for_time",
-      action: "availability_time_full"
+      stage: offeredDifferentDay ? "waiting_for_date" : "waiting_for_time",
+      action: offeredDifferentDay ? "availability_next_day_time_offered" : "availability_time_full"
     };
   }
 
@@ -2039,13 +3249,66 @@ export class BotService {
       action = "emergency_escalation";
       latestIntent = "emergency";
       stage = "fallback";
-    } else if (normalizedTranscript.includes("human") || normalizedTranscript.includes("reception")) {
+    } else if (matchHumanTransferIntent(normalizedTranscript)) {
       const transferPrefix = prompts.transferMessage.replace("the configured clinic number", "").trim();
       reply = `${transferPrefix} ${clinicSettings?.transferNumber ?? "the configured clinic number"}.`.trim();
       action = "transfer_call";
       latestIntent = "human_escalation";
       stage = "fallback";
       session = updateSession(session, { callStatus: "completed" });
+    } else if (
+      matchCancelAppointmentIntent(normalizedTranscript)
+      && !["confirming", "reschedule_confirming", "cancel_confirming"].includes(session.bookingStage)
+    ) {
+      const existingBooking = findLatestActiveAppointmentForCaller(appointmentSnapshots, session.callerNumber);
+
+      if (existingBooking) {
+        session = updateSession(session, {
+          ...appointmentSessionFields(existingBooking, runtimeDoctors, session),
+          cancel_booking: existingBooking
+        });
+        reply = buildCancelConfirmation(existingBooking, runtimeDoctors, prompts);
+        stage = "cancel_confirming";
+        action = "cancel_existing_booking_found";
+      } else {
+        reply = prompts.cancelNoActiveBooking;
+        stage = "waiting_for_intent";
+        action = "cancel_no_active_booking";
+      }
+
+      latestIntent = "cancel_appointment";
+    } else if (
+      matchRescheduleIntent(normalizedTranscript)
+      && ![
+        "confirming",
+        "reschedule_waiting_for_new_day",
+        "reschedule_waiting_for_new_slot",
+        "reschedule_confirming",
+        "cancel_confirming"
+      ].includes(session.bookingStage)
+    ) {
+      const existingBooking = findLatestActiveAppointmentForCaller(appointmentSnapshots, session.callerNumber);
+
+      if (existingBooking) {
+        session = updateSession(session, {
+          ...appointmentSessionFields(existingBooking, runtimeDoctors, session),
+          reschedule_existing: existingBooking,
+          reschedule_new_day: null,
+          reschedule_available_slots: [],
+          reschedule_confirmed_slot: null
+        });
+        reply = renderPrompt(prompts.rescheduleFoundBooking, {
+          appointment: buildAppointmentSpeech(existingBooking, runtimeDoctors)
+        });
+        stage = "reschedule_waiting_for_new_day";
+        action = "reschedule_existing_booking_found";
+      } else {
+        reply = prompts.rescheduleNoActiveBooking;
+        stage = "waiting_for_intent";
+        action = "reschedule_no_active_booking";
+      }
+
+      latestIntent = "reschedule_appointment";
     } else {
       const availabilityStep = resolveAvailabilityFirstStep(session, runtimeDoctors, appointmentSnapshots, prompts, intelligence);
       if (availabilityStep) {
@@ -2106,10 +3369,21 @@ export class BotService {
               break;
             }
 
+            const ambiguousDoctorMatches = mapAmbiguousDoctorPreference(normalizedTranscript, runtimeDoctors);
             const directDoctor = mapDoctorPreference(normalizedTranscript, session, runtimeDoctors);
             const specialization = mapSpecialization(normalizedTranscript, runtimeDoctors);
 
-            if (directDoctor) {
+            if (asksDoctorList(normalizedTranscript)) {
+              reply = buildAvailableDoctorsReply(runtimeDoctors);
+              stage = "waiting_for_specialization";
+              action = "share_available_doctors";
+              latestIntent = "book_appointment";
+            } else if (ambiguousDoctorMatches.length > 0) {
+              reply = buildDoctorDisambiguationPrompt(ambiguousDoctorMatches);
+              stage = "waiting_for_doctor_preference";
+              action = "clarify_doctor_preference";
+              latestIntent = "book_appointment";
+            } else if (directDoctor) {
               const selectedDoctor = runtimeDoctors.find((doctor) => doctor.name === directDoctor.selectedDoctor) ?? null;
               session = updateSession(session, {
                 selectedSpecialization: selectedDoctor?.specialization ?? session.selectedSpecialization,
@@ -2173,10 +3447,18 @@ export class BotService {
           }
 
         case "waiting_for_specialization": {
+          const ambiguousDoctorMatches = mapAmbiguousDoctorPreference(normalizedTranscript, runtimeDoctors);
           const directDoctor = mapDoctorPreference(normalizedTranscript, session, runtimeDoctors);
           const specialization = mapSpecialization(normalizedTranscript, runtimeDoctors);
 
-          if (directDoctor) {
+          if (asksDoctorList(normalizedTranscript)) {
+            reply = buildAvailableDoctorsReply(runtimeDoctors);
+            action = "share_available_doctors";
+          } else if (ambiguousDoctorMatches.length > 0) {
+            reply = buildDoctorDisambiguationPrompt(ambiguousDoctorMatches);
+            stage = "waiting_for_doctor_preference";
+            action = "clarify_doctor_preference";
+          } else if (directDoctor) {
             const selectedDoctor = runtimeDoctors.find((doctor) => doctor.name === directDoctor.selectedDoctor) ?? null;
             session = updateSession(session, {
               selectedSpecialization: selectedDoctor?.specialization ?? session.selectedSpecialization,
@@ -2197,6 +3479,12 @@ export class BotService {
             reply = next?.reply ?? withExtraInstructions(prompts.askDoctorPreference, prompts);
             stage = next?.stage ?? "waiting_for_doctor_preference";
             action = "capture_specialization";
+          } else if (session.selectedDoctor || session.selectedSpecialization) {
+            const next = askNextMissingField(session, prompts, intelligence);
+            session = next.session;
+            reply = next.reply;
+            stage = next.stage;
+            action = "continue_booking_after_smart_capture";
           } else {
             reply = runtimeDoctors.length > 0
               ? `Available specializations include ${runtimeDoctors.map((doctor) => doctor.specialization).filter((value, index, array) => array.indexOf(value) === index).join(", ")}. Please choose one.`
@@ -2213,6 +3501,7 @@ export class BotService {
         case "waiting_for_doctor_preference": {
           const rememberedDoctor = getConversationMemory(session).lastDoctor ?? null;
           const acceptedRememberedDoctor = rememberedDoctor && mapYesNo(normalizedTranscript) === "yes";
+          const ambiguousDoctorMatches = acceptedRememberedDoctor ? [] : mapAmbiguousDoctorPreference(normalizedTranscript, runtimeDoctors);
           const preference = acceptedRememberedDoctor
             ? {
                 doctorPreference: "specific_doctor",
@@ -2221,7 +3510,11 @@ export class BotService {
               }
             : mapDoctorPreference(normalizedTranscript, session, runtimeDoctors);
 
-          if (preference) {
+          if (ambiguousDoctorMatches.length > 0) {
+            reply = buildDoctorDisambiguationPrompt(ambiguousDoctorMatches);
+            stage = "waiting_for_doctor_preference";
+            action = "clarify_doctor_preference";
+          } else if (preference) {
             session = updateSession(session, {
               doctorPreference: preference.doctorPreference,
               selectedDoctor: preference.selectedDoctor
@@ -2273,6 +3566,7 @@ export class BotService {
 
           if (time) {
             session = updateSession(session, {
+              preferredDate: acceptedOffer ? session.availabilityOfferedDate ?? session.preferredDate : session.preferredDate,
               preferredTime: time,
               availabilityOfferedDate: acceptedOffer ? null : session.availabilityOfferedDate,
               availabilityOfferedTime: acceptedOffer ? null : session.availabilityOfferedTime,
@@ -2291,6 +3585,16 @@ export class BotService {
         }
 
         case "waiting_for_patient_name": {
+          const slotCorrection = resolveBookingSlotCorrection(session, normalizedTranscript, runtimeDoctors, appointmentSnapshots, prompts, intelligence);
+
+          if (slotCorrection) {
+            session = slotCorrection.session;
+            reply = slotCorrection.reply;
+            stage = slotCorrection.stage;
+            action = slotCorrection.action;
+            break;
+          }
+
           const patientName = extractPatientName(input.transcript);
 
           if (patientName) {
@@ -2314,6 +3618,7 @@ export class BotService {
           if (yesNo === "yes" && ani) {
             session = updateSession(session, {
               contactNumber: ani,
+              partialMobileDigits: null,
               bookingContactConfirmed: true,
               bookingContactConfirmationPending: false
             });
@@ -2328,6 +3633,7 @@ export class BotService {
           if (yesNo === "no") {
             session = updateSession(session, {
               contactNumber: null,
+              partialMobileDigits: null,
               bookingContactConfirmed: false,
               bookingContactConfirmationPending: false
             });
@@ -2342,6 +3648,7 @@ export class BotService {
           if (mobile) {
             session = updateSession(session, {
               contactNumber: mobile,
+              partialMobileDigits: null,
               bookingContactConfirmed: true,
               bookingContactConfirmationPending: false
             });
@@ -2351,8 +3658,33 @@ export class BotService {
             stage = next?.stage ?? "waiting_for_patient_type";
             action = "capture_mobile";
           } else {
-            reply = buildRecoveryPrompt("waiting_for_mobile", session, prompts);
-            action = "reprompt_mobile";
+            const partialMobile = resolvePartialMobile(input.transcript, session);
+
+            if (partialMobile && "mobile" in partialMobile) {
+              session = updateSession(session, {
+                contactNumber: partialMobile.mobile,
+                partialMobileDigits: null,
+                bookingContactConfirmed: true,
+                bookingContactConfirmationPending: false
+              });
+              const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+              session = next?.session ?? session;
+              reply = next?.reply ?? withExtraInstructions(prompts.askPatientType, prompts);
+              stage = next?.stage ?? "waiting_for_patient_type";
+              action = "capture_mobile_partial";
+            } else if (partialMobile) {
+              session = updateSession(session, {
+                partialMobileDigits: partialMobile.partialMobileDigits,
+                bookingContactConfirmed: false,
+                bookingContactConfirmationPending: false
+              });
+              reply = partialMobile.reply;
+              stage = "waiting_for_mobile";
+              action = "capture_partial_mobile";
+            } else {
+              reply = buildRecoveryPrompt("waiting_for_mobile", session, prompts);
+              action = "reprompt_mobile";
+            }
           }
           break;
         }
@@ -2576,8 +3908,19 @@ export class BotService {
           const confirmation = mapConfirmationFlexible(normalizedTranscript);
           const existingBooking = session.reschedule_existing ?? findLatestActiveAppointmentForCaller(appointmentSnapshots, session.callerNumber);
           const appointmentId = appointmentIdOf(existingBooking);
+          const slotCorrection = confirmation === "confirm" || confirmation === "cancel"
+            ? null
+            : resolveRescheduleSlotCorrection(session, normalizedTranscript, existingBooking, runtimeDoctors, appointmentSnapshots, prompts);
 
           latestIntent = "reschedule_appointment";
+
+          if (slotCorrection) {
+            session = slotCorrection.session;
+            reply = slotCorrection.reply;
+            stage = slotCorrection.stage;
+            action = slotCorrection.action;
+            break;
+          }
 
           if (confirmation === "change_time") {
             reply = renderPrompt(prompts.rescheduleAskSlot, {
@@ -2642,14 +3985,14 @@ export class BotService {
 
           latestIntent = "cancel_appointment";
 
-          if (confirmation === "cancel" || mapYesNo(normalizedTranscript) === "no") {
+          if (mapYesNo(normalizedTranscript) === "no") {
             reply = prompts.cancelDeclined;
             stage = "waiting_for_intent";
             action = "cancel_declined";
             break;
           }
 
-          if (confirmation !== "confirm") {
+          if (confirmation !== "confirm" && confirmation !== "cancel") {
             reply = existingBooking
               ? buildCancelConfirmation(existingBooking, runtimeDoctors, prompts)
               : prompts.cancelMissingBooking;
@@ -2740,6 +4083,13 @@ export class BotService {
           bookingResult: "Callback requested after fallback"
         });
       }
+    }
+
+    if (hasEndConversationIntent(normalizedTranscript) && !["confirming", "reschedule_confirming", "cancel_confirming"].includes(stage)) {
+      reply = prompts.goodbyeMessage;
+      action = "caller_goodbye";
+      stage = "fallback";
+      session = updateSession(session, { callStatus: "completed" });
     }
 
     if (canUseConfiguredLlmReply(action)) {
