@@ -136,6 +136,7 @@ async function generateOpenAiGreeting(fetchImpl, timeoutMs, config, text, logger
 async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger) {
     const apiKey = resolveApiKey(config);
     const resolvedConfig = resolveSarvamTtsConfig(config);
+    const speechText = normalizeSpeechText(text);
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => controller.abort(new Error('Sarvam TTS request timed out')), timeoutMs);
 
@@ -145,8 +146,29 @@ async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger
             speaker: resolvedConfig.speaker,
             language: resolvedConfig.language,
             sampleRate: resolvedConfig.sampleRate,
-            textLength: text.length
+            pace: resolvedConfig.pace,
+            temperature: resolvedConfig.temperature,
+            textLength: speechText.length
         });
+
+        const requestPayload = {
+            text: speechText,
+            target_language_code: resolvedConfig.language,
+            speaker: resolvedConfig.speaker,
+            model: resolvedConfig.model,
+            speech_sample_rate: resolvedConfig.sampleRate,
+            output_audio_codec: 'wav'
+        };
+
+        if (resolvedConfig.model === 'bulbul:v3') {
+            requestPayload.pace = resolvedConfig.pace;
+            requestPayload.temperature = resolvedConfig.temperature;
+        } else {
+            requestPayload.enable_preprocessing = true;
+            requestPayload.pace = resolvedConfig.pace;
+            requestPayload.pitch = resolvedConfig.pitch;
+            requestPayload.loudness = resolvedConfig.loudness;
+        }
 
         const response = await fetchImpl(SARVAM_TTS_URL, {
             method: 'POST',
@@ -154,14 +176,7 @@ async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger
                 'Content-Type': 'application/json',
                 'api-subscription-key': apiKey
             },
-            body: JSON.stringify({
-                text,
-                target_language_code: resolvedConfig.language,
-                speaker: resolvedConfig.speaker,
-                model: resolvedConfig.model,
-                speech_sample_rate: resolvedConfig.sampleRate,
-                output_audio_codec: 'wav'
-            }),
+            body: JSON.stringify(requestPayload),
             signal: controller.signal
         });
 
@@ -170,8 +185,8 @@ async function generateSarvamGreeting(fetchImpl, timeoutMs, config, text, logger
             throw new Error(`Sarvam TTS returned ${response.status}${errorBody ? `: ${errorBody.slice(0, 200)}` : ''}`);
         }
 
-        const payload = await response.json();
-        const encodedAudio = payload?.audios?.[0];
+        const responsePayload = await response.json();
+        const encodedAudio = responsePayload?.audios?.[0];
 
         if (!encodedAudio || typeof encodedAudio !== 'string') {
             throw new Error('Sarvam TTS response did not include audios[0]');
@@ -242,6 +257,21 @@ const SARVAM_TTS_DEFAULT_VOICE_BY_MODEL = {
     'bulbul:v2': 'anushka'
 };
 
+const MONTH_ALIASES = [
+    { month: 'January', aliases: ['jan', 'january', 'janavari', 'januari', 'janyuaari', 'jaanuari'] },
+    { month: 'February', aliases: ['feb', 'february', 'faravari', 'februaari'] },
+    { month: 'March', aliases: ['mar', 'march', 'maarch'] },
+    { month: 'April', aliases: ['apr', 'april', 'aprail', 'epril'] },
+    { month: 'May', aliases: ['may', 'mai'] },
+    { month: 'June', aliases: ['jun', 'june'] },
+    { month: 'July', aliases: ['jul', 'july', 'julai'] },
+    { month: 'August', aliases: ['aug', 'august', 'agast', 'ogast'] },
+    { month: 'September', aliases: ['sep', 'sept', 'september', 'sitambar'] },
+    { month: 'October', aliases: ['oct', 'october', 'aktoobar', 'oktobar'] },
+    { month: 'November', aliases: ['nov', 'november', 'navambar'] },
+    { month: 'December', aliases: ['dec', 'december', 'disambar'] }
+];
+
 function resolveSarvamTtsConfig(config) {
     const requestedModel = String(config?.model || config?.sarvamTtsModel || 'bulbul:v3').toLowerCase();
     const model = SARVAM_TTS_VOICES_BY_MODEL[requestedModel] ? requestedModel : 'bulbul:v3';
@@ -254,8 +284,30 @@ function resolveSarvamTtsConfig(config) {
             ? SARVAM_TTS_DEFAULT_VOICE_BY_MODEL[model]
             : requestedSpeaker,
         language: String(config?.language || config?.sarvamTtsLanguage || 'en-IN'),
-        sampleRate: Number(config?.sampleRate || config?.sarvamTtsSampleRate) || 8000
+        sampleRate: Number(config?.sampleRate || config?.sarvamTtsSampleRate) || (model === 'bulbul:v3' ? 24000 : 22050),
+        pace: Number(config?.pace || config?.sarvamTtsPace) || (model === 'bulbul:v3' ? 0.95 : 1.0),
+        temperature: Number(config?.temperature || config?.sarvamTtsTemperature) || 0.45,
+        pitch: Number(config?.pitch || config?.sarvamTtsPitch) || 0,
+        loudness: Number(config?.loudness || config?.sarvamTtsLoudness) || 1.0
     };
+}
+
+function normalizeSpeechText(text) {
+    return String(text || '')
+        .trim()
+        .replace(/\bdr\.?\s+/gi, 'Doctor ')
+        .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (_match, year, month, day) => {
+            const monthName = MONTH_ALIASES[Number(month) - 1]?.month || month;
+            return `${Number(day)} ${monthName} ${year}`;
+        })
+        .replace(/\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))\b/g, (_match, day, month, year) => {
+            const monthName = MONTH_ALIASES[Number(month) - 1]?.month || month;
+            const resolvedYear = String(year).length === 2 ? `20${year}` : year;
+            return `${Number(day)} ${monthName} ${resolvedYear}`;
+        })
+        .replace(/[\p{P}\p{S}]/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 }
 
 function decodeBase64Audio(encodedAudio) {

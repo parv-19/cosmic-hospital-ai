@@ -1,4 +1,6 @@
+// THEMED: dark-mode table primitive with the existing generic API.
 import React from "react";
+import { cn } from "../../lib/utils";
 
 interface Column<T> {
   key: string;
@@ -23,14 +25,14 @@ export function Table<T extends Record<string, unknown>>({
   loading = false,
 }: TableProps<T>) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200">
+    <div className="overflow-x-auto rounded-2xl border border-slate-300 bg-slate-50 shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <table className="w-full text-sm">
         <thead>
-          <tr className="bg-slate-50 border-b border-slate-200">
+          <tr className="border-b border-slate-300 bg-slate-100 dark:border-slate-700 dark:bg-slate-950">
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`text-left text-xs font-semibold text-slate-500 uppercase tracking-wide px-4 py-3 ${col.className ?? ""}`}
+                className={cn("px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300", col.className)}
               >
                 {col.header}
               </th>
@@ -40,9 +42,9 @@ export function Table<T extends Record<string, unknown>>({
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={columns.length} className="py-12 text-center text-slate-400 text-sm">
+              <td colSpan={columns.length} className="py-12 text-center text-sm text-slate-400">
                 <div className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24">
+                  <svg className="h-4 w-4 animate-spin text-sky-500" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                   </svg>
@@ -52,7 +54,7 @@ export function Table<T extends Record<string, unknown>>({
             </tr>
           ) : data.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="py-12 text-center text-slate-400 text-sm">
+              <td colSpan={columns.length} className="py-12 text-center text-sm text-slate-400">
                 {emptyMessage}
               </td>
             </tr>
@@ -61,11 +63,15 @@ export function Table<T extends Record<string, unknown>>({
               <tr
                 key={i}
                 onClick={() => onRowClick?.(row)}
-                className={`border-b border-slate-100 last:border-0 table-row-hover ${onRowClick ? "cursor-pointer" : ""}`}
+                className={cn(
+                  "border-b border-slate-200 transition-colors duration-200 last:border-0 hover:bg-sky-50 dark:border-slate-700 dark:hover:bg-slate-700/70",
+                  i % 2 === 0 ? "bg-white dark:bg-slate-800" : "bg-slate-100/70 dark:bg-slate-900/65",
+                  onRowClick && "cursor-pointer"
+                )}
               >
                 {columns.map((col) => (
-                  <td key={col.key} className={`px-4 py-3 text-slate-700 ${col.className ?? ""}`}>
-                    {col.render ? col.render(row) : String(row[col.key] ?? "—")}
+                  <td key={col.key} className={cn("px-4 py-3 text-slate-800 dark:text-slate-200", col.className)}>
+                    {col.render ? col.render(row) : String(row[col.key] ?? "-")}
                   </td>
                 ))}
               </tr>

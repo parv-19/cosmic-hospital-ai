@@ -27,7 +27,9 @@ const PLAY_WELCOME_FILE = greetingConfig.playWelcomeFile;
 const END_OF_SPEECH_MS = greetingConfig.endOfSpeechMs;
 const MIN_UTTERANCE_MS = greetingConfig.minUtteranceMs;
 const UTTERANCE_MAX_MS = greetingConfig.utteranceMaxMs;
-const SPEECH_CHUNK_AVG_ABS_THRESHOLD = 250;
+const SPEECH_CHUNK_AVG_ABS_THRESHOLD = greetingConfig.speechChunkAvgAbsThreshold;
+const SPEECH_START_CONSECUTIVE_CHUNKS = Math.max(1, greetingConfig.speechStartConsecutiveChunks);
+const POST_SPEAK_LISTEN_DELAY_MS = Math.max(0, greetingConfig.postSpeakListenDelayMs);
 const DEMO_CALLER_UTTERANCES = [
     'appointment book karna hai',
     'cardiologist',
@@ -67,6 +69,9 @@ logger.log(`STT_PROVIDER=${greetingConfig.sttProvider}`);
 logger.log(`END_OF_SPEECH_MS=${END_OF_SPEECH_MS}`);
 logger.log(`MIN_UTTERANCE_MS=${MIN_UTTERANCE_MS}`);
 logger.log(`UTTERANCE_MAX_MS=${UTTERANCE_MAX_MS}`);
+logger.log(`SPEECH_CHUNK_AVG_ABS_THRESHOLD=${SPEECH_CHUNK_AVG_ABS_THRESHOLD}`);
+logger.log(`SPEECH_START_CONSECUTIVE_CHUNKS=${SPEECH_START_CONSECUTIVE_CHUNKS}`);
+logger.log(`POST_SPEAK_LISTEN_DELAY_MS=${POST_SPEAK_LISTEN_DELAY_MS}`);
 if (!fs.existsSync(WELCOME_FILE)) {
     logger.error(`WELCOME_FILE missing: ${WELCOME_FILE}`);
 } else {
@@ -97,8 +102,11 @@ function createSessionState(ws) {
         inboundAudioData: [],
         maxAudioDataLen: 2048,
         currentUtteranceChunks: [],
+        speechCandidateChunks: [],
+        speechCandidateStartedAt: 0,
         speechStartedAt: 0,
         lastInboundAt: 0,
+        listenEnabledAt: 0,
         droppedInboundChunks: 0,
         turnState: 'LISTENING',
         speakingSource: '',
@@ -123,6 +131,7 @@ function createSessionState(ws) {
         demoTurnIndex: 0,
         demoCompleted: false,
         hangupSent: false,
+        outboundStarted: false,
         transferPending: false,
         transferSent: false,
         transferNumber: '',
@@ -179,6 +188,7 @@ async function _onControl(state, text) {
             logger.error(`Failed to fetch clinic-settings for ${state.uuid}: ${e.message}`);
             state.aiConfig = {};
         }
+        startMediaLoop(state, 'start-control');
         break;
 
     case 'info':
@@ -204,14 +214,7 @@ function _onAudio(state, chunk) {
     if (!state.firstAudioSeen) {
         state.firstAudioSeen = true;
         logger.log(`First binary audio received uuid=${state.uuid || 'pending'} bytes=${chunk.length}`);
-
-        // start audio sender / receiver
-        logger.log(`Starting audio receiver uuid=${state.uuid || 'pending'}`);
-        startAudioReceiver(state);
-        logger.log(`Starting audio sender uuid=${state.uuid || 'pending'}`);
-        startAudioSender(state);
-
-        void playConfiguredGreeting(state);
+        startMediaLoop(state, 'first-audio');
     }
 
     state.RECV_CHUNK++;
@@ -227,12 +230,35 @@ function _onAudio(state, chunk) {
 
     const now = Date.now();
 
+    if (state.listenEnabledAt && now < state.listenEnabledAt) {
+        return;
+    }
+
     if (!hasSpeechEnergy(chunk)) {
+        if (!state.speechStartedAt) {
+            state.speechCandidateChunks.length = 0;
+            state.speechCandidateStartedAt = 0;
+        }
         return;
     }
 
     if (!state.speechStartedAt) {
-        state.speechStartedAt = now;
+        if (!state.speechCandidateStartedAt) {
+            state.speechCandidateStartedAt = now;
+        }
+
+        state.speechCandidateChunks.push(chunk);
+
+        if (state.speechCandidateChunks.length < SPEECH_START_CONSECUTIVE_CHUNKS) {
+            return;
+        }
+
+        state.speechStartedAt = state.speechCandidateStartedAt;
+        state.currentUtteranceChunks.push(...state.speechCandidateChunks);
+        state.speechCandidateChunks.length = 0;
+        state.speechCandidateStartedAt = 0;
+        state.lastInboundAt = now;
+        return;
     }
 
     state.lastInboundAt = now;
@@ -242,6 +268,13 @@ function _onAudio(state, chunk) {
         state.currentUtteranceChunks.shift();
     }
     state.currentUtteranceChunks.push(chunk);
+}
+
+function startMediaLoop(state, reason) {
+    logger.log(`Ensuring media loop uuid=${state.uuid || 'pending'} reason=${reason}`);
+    startAudioReceiver(state);
+    startAudioSender(state);
+    void playConfiguredGreeting(state);
 }
 
 function startAudioReceiver(state) {
@@ -402,16 +435,18 @@ async function mockTTS(text) {
 
 async function generateReplyTtsAudio(state, replyText) {
     const safeReplyText = String(replyText || '').trim() || 'No reply generated';
+    const ttsConfig = resolveTtsConfig(state);
 
     logger.log('[reply-tts] request start', {
         uuid: state.uuid || 'pending',
-        textLength: safeReplyText.length
+        textLength: safeReplyText.length,
+        language: ttsConfig.language
     });
 
     try {
         const audioBuffer = await greetingService.generateGreetingAudio({
             ...greetingConfig,
-            ...(state.aiConfig?.ttsProviders || {}),
+            ...ttsConfig,
             greetingText: safeReplyText
         });
 
@@ -421,6 +456,22 @@ async function generateReplyTtsAudio(state, replyText) {
         logger.error(`[reply-tts] fallback to mockTTS reason=${error.message}`);
         return mockTTS(safeReplyText);
     }
+}
+
+function resolveTtsConfig(state) {
+    const ttsProviders = state.aiConfig?.ttsProviders || {};
+    return {
+        ...ttsProviders,
+        language: ttsProviders.language
+            || ttsProviders.target_language_code
+            || state.aiConfig?.language
+            || state.aiConfig?.supportedLanguage
+            || greetingConfig.sarvamTtsLanguage
+            || 'en-IN',
+        pace: ttsProviders.pace || greetingConfig.sarvamTtsPace,
+        temperature: ttsProviders.temperature || greetingConfig.sarvamTtsTemperature,
+        sampleRate: ttsProviders.sampleRate || greetingConfig.sarvamTtsSampleRate
+    };
 }
 
 async function playConfiguredGreeting(state) {
@@ -443,12 +494,12 @@ async function playConfiguredGreeting(state) {
         state.playingFile = true;
 
         try {
+            const ttsConfig = resolveTtsConfig(state);
             const audioBuffer = await greetingService.generateGreetingAudio({
                 ...greetingConfig,
-                ...(state.aiConfig?.ttsProviders || {}),
+                ...ttsConfig,
                 greetingText: state.aiConfig?.greetingMessage || greetingConfig.greetingText
             });
-            const ttsConfig = state.aiConfig?.ttsProviders || {};
             state.pendingUsageEvents.push({
                 service: 'tts',
                 provider: ttsConfig.primaryProvider || greetingConfig.greetingTtsProvider || 'mock',
@@ -502,7 +553,15 @@ function startAudioSender(state) {
 
 function sendOutboundTick(state) {
     if (state.paused || state.ws.readyState !== WebSocket.OPEN) return;
-    if (state.outboundAudioData.length === 0) return;
+    if (state.outboundAudioData.length === 0) {
+        if (
+            (state.turnState === 'PROCESSING' || (state.turnState === 'SPEAKING' && !state.outboundStarted))
+            && !state.demoCompleted
+        ) {
+            sendSilenceTick(state, `keepalive-${state.turnState.toLowerCase()}`);
+        }
+        return;
+    }
 
     const availableFrames = Math.min(state.outboundAudioData.length, state.outboundSize);
     const batch = state.outboundAudioData.splice(0, availableFrames);
@@ -552,6 +611,17 @@ function sendTransferControl(state, reason) {
     state.ws.send(JSON.stringify(transferPayload));
 }
 
+function sendSilenceTick(state, reason) {
+    const frame = Buffer.alloc(MAX_CHUNK_SIZE * state.outboundSize);
+    state.SEND_CHUNK++;
+
+    if (state.SEND_CHUNK % 10 === 1) {
+        logger.log(`sendSilenceTick uuid=${state.uuid || 'pending'} reason=${reason} sendChunk=${state.SEND_CHUNK} recvChunk=${state.RECV_CHUNK}`);
+    }
+
+    state.ws.send(frame, { binary: true });
+}
+
 function buildTransferControlPayload(state) {
     const dialNumber = state.transferNumber || normalizeTransferDialNumber(state.aiConfig?.transferNumber || '');
 
@@ -596,6 +666,9 @@ function normalizeTransferDialNumber(value) {
 
 function enqueueOutbound(state, buffer) {
     const total = buffer.length;
+    if (total > 0) {
+        state.outboundStarted = true;
+    }
 
     for (let offset = 0; offset < total; offset += MAX_CHUNK_SIZE) {
         const remaining = total - offset;
@@ -677,8 +750,18 @@ async function finalizeCurrentUtterance(state, reason) {
         });
 
         const transcript = selectTranscript(rawTranscript, scriptedTranscript, state);
+        if (state.ws.readyState !== WebSocket.OPEN || state.cleanupNotified) {
+            logger.log(`[${state.uuid || 'demo-session'}] skipping bot processing because websocket is closed`);
+            return;
+        }
         logger.log(`[stt][final] uuid=${state.uuid || 'pending'} transcript="${transcript}"`);
         logger.log(`[stt] transcript=${transcript}`);
+
+        if (!String(transcript || '').trim()) {
+            logger.warn(`[stt] empty transcript uuid=${state.uuid || 'pending'}, ignoring utterance`);
+            setTurnState(state, 'LISTENING', 'empty-transcript');
+            return;
+        }
 
         const sttConfig = state.aiConfig?.sttProviders || {};
         const usageEvents = [
@@ -699,14 +782,19 @@ async function finalizeCurrentUtterance(state, reason) {
         const shouldTransferCall = botAction === 'transfer_call' || botAction === 'fallback_transfer' || botIntent === 'human_escalation' || botCallStatus === 'transferred';
 
         if (shouldTransferCall) {
-            state.transferPending = true;
             const rawTransferNumber = state.aiConfig?.transferNumber || extractTransferNumber(replyText) || '';
-            state.transferNumber = normalizeTransferDialNumber(rawTransferNumber);
-            replyText = TRANSFER_CONFIRMATION_MESSAGE;
-            logger.log(`[${state.uuid || 'demo-session'}] transfer queued number=${state.transferNumber || 'unknown'}`);
-            sendTransferControl(state, 'transfer-intent');
-            if (state.ws.readyState !== WebSocket.OPEN) {
-                return;
+            const transferNumber = normalizeTransferDialNumber(rawTransferNumber);
+
+            if (transferNumber) {
+                state.transferPending = true;
+                state.transferNumber = transferNumber;
+                replyText = TRANSFER_CONFIRMATION_MESSAGE;
+                logger.log(`[${state.uuid || 'demo-session'}] transfer queued number=${state.transferNumber}`);
+            } else {
+                state.transferPending = false;
+                state.transferNumber = '';
+                logger.warn(`[${state.uuid || 'demo-session'}] transfer requested but no transfer number is configured`);
+                replyText = 'Reception transfer number is not configured right now. Please call the reception desk directly.';
             }
         }
 
@@ -769,6 +857,8 @@ function getUtteranceDurationMsFromChunks(chunks) {
 
 function clearCurrentUtterance(state) {
     state.currentUtteranceChunks.length = 0;
+    state.speechCandidateChunks.length = 0;
+    state.speechCandidateStartedAt = 0;
     state.speechStartedAt = 0;
     state.lastInboundAt = 0;
 }
@@ -782,6 +872,15 @@ function setTurnState(state, nextState, reason) {
 
     logger.log(`[turn] uuid=${state.uuid || 'pending'} ${previousState} -> ${nextState} reason=${reason}`);
     state.turnState = nextState;
+
+    if (nextState === 'SPEAKING') {
+        state.outboundStarted = false;
+    }
+
+    if (previousState === 'SPEAKING' && nextState === 'LISTENING' && POST_SPEAK_LISTEN_DELAY_MS > 0) {
+        state.listenEnabledAt = Date.now() + POST_SPEAK_LISTEN_DELAY_MS;
+        clearCurrentUtterance(state);
+    }
 
     if (previousState === 'SPEAKING' && state.droppedInboundChunks > 0) {
         logger.log(`[inbound] dropped chunk count during SPEAKING uuid=${state.uuid || 'pending'} count=${state.droppedInboundChunks}`);

@@ -80,6 +80,8 @@ type SettingsInput = {
     askPatientType?: string;
     confirmPrefix?: string;
     bookingConfirmed?: string;
+    bookingConfirmationSummary?: string;
+    bookingFinalSummary?: string;
     bookingCancelled?: string;
     bookingAlreadyComplete?: string;
     bookingAlreadyCancelled?: string;
@@ -102,6 +104,9 @@ type SettingsInput = {
     recoveryPatientName?: string;
     recoveryMobile?: string;
     recoveryConfirmation?: string;
+    availableDoctors?: string;
+    doctorDisambiguation?: string;
+    partialMobilePrompt?: string;
     availabilityExactSlotAvailable?: string;
     availabilitySlotAvailable?: string;
     availabilityTimeFull?: string;
@@ -124,6 +129,8 @@ type SettingsInput = {
     rescheduleDeclined?: string;
     rescheduleAlreadyComplete?: string;
     cancelNoActiveBooking?: string;
+    noActiveAppointmentSpecific?: string;
+    cancelAskPatientName?: string;
     cancelConfirm?: string;
     cancelDeclined?: string;
     cancelMissingBooking?: string;
@@ -168,6 +175,8 @@ const DEFAULT_CONVERSATION_PROMPTS = {
   askPatientType: "Kya yeh new patient hai ya follow-up?",
   confirmPrefix: "Main aapki details confirm karti hoon.",
   bookingConfirmed: "Dhanyavaad. Aapki booking request dashboard par update kar di gayi hai.",
+  bookingConfirmationSummary: "{{confirmPrefix}} {{date}} {{time}} par Dr. {{doctor}} ke saath booking hai, naam {{patientName}}, aur contact number {{contactNumber}} rahega. Sahi hai?",
+  bookingFinalSummary: "{{bookingConfirmed}} {{date}} {{time}} par Dr. {{doctor}} ke saath appointment booked hai. Reference last 4: {{reference}}.",
   bookingCancelled: "The booking request has been cancelled in demo mode. If you want, we can start again with a new appointment request.",
   bookingAlreadyComplete: "Your appointment request is already confirmed in demo mode. Thank you for calling.",
   bookingAlreadyCancelled: "This demo booking was cancelled. You can start again by saying appointment book karna hai.",
@@ -190,6 +199,9 @@ const DEFAULT_CONVERSATION_PROMPTS = {
   recoveryPatientName: "Naam clear nahi aaya. Kis naam se booking karoon?",
   recoveryMobile: "Mobile number clear nahi aaya. Ek baar number bata dijiye.",
   recoveryConfirmation: "Confirm karna tha. Details sahi hain?",
+  availableDoctors: "Humare paas {{doctorList}} available hain. Kaunsa doctor chahiye?",
+  doctorDisambiguation: "Batayiye, kaunse doctor se appointment leni hai? Humare yaha {{doctorOptions}} available hain.",
+  partialMobilePrompt: "{{digits}} mila. Baaki {{remainingDigits}} digit bata dijiye.",
   availabilityExactSlotAvailable: "{{time}} ka slot available hai.",
   availabilitySlotAvailable: "{{day}} {{timeContext}}{{slot}} ka slot available hai.",
   availabilityTimeFull: "{{requestedTime}} available nahi hai. {{alternativeFrame}}. Kaunsa rakh doon?",
@@ -212,6 +224,8 @@ const DEFAULT_CONVERSATION_PROMPTS = {
   rescheduleDeclined: "Theek hai, reschedule abhi cancel kar diya. Nayi appointment ya koi aur madad chahiye ho to bata dijiye.",
   rescheduleAlreadyComplete: "Aapki appointment already reschedule ho chuki hai. Thank you.",
   cancelNoActiveBooking: "Is number par koi active appointment nahi mili. Nayi appointment book karni ho to bata dijiye.",
+  noActiveAppointmentSpecific: "Is number par {{criteria}} ke liye koi active appointment nahi mili.",
+  cancelAskPatientName: "{{criteria}} ke liye kis patient ke naam par appointment cancel karni hai?",
   cancelConfirm: "Aapki booking {{appointment}} ke liye hai. Kya main ise cancel kar doon?",
   cancelDeclined: "Theek hai, appointment cancel nahi ki gayi. Koi aur madad chahiye ho to bata dijiye.",
   cancelMissingBooking: "Active booking nahi mili. Koi aur madad chahiye ho to bata dijiye.",

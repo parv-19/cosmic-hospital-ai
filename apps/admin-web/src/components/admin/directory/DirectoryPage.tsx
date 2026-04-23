@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+// THEMED: directory cards preserve existing doctor create/edit flows.
 import {
   createDoctor,
   fetchAppointments,

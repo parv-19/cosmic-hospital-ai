@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+// THEMED: AI provider panels preserve existing health/save calls.
 import { checkProviderHealth, fetchSettings, updateSettings, type SettingsRecord } from "../../../api";
 import { useAuth } from "../../../context/AuthContext";
 import { Card, CardHeader } from "../../ui/Card";

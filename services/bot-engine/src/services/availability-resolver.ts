@@ -51,6 +51,7 @@ export type AvailabilityPromptTemplates = Partial<{
 }>;
 
 const DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+const JS_DAY_ORDER = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const MONTHS: Array<{ month: number; names: string[] }> = [
   { month: 0, names: ["january", "jan"] },
   { month: 1, names: ["february", "feb"] },
@@ -96,6 +97,12 @@ function normalizeDay(value: string | null | undefined): string | null {
   return DAY_ORDER.find((day) => normalized.includes(day)) ?? null;
 }
 
+function formatCalendarDate(date: Date): string {
+  const weekday = JS_DAY_ORDER[date.getDay()];
+  const month = MONTHS[date.getMonth()].names[0];
+  return `${weekday} ${date.getDate()} ${month} ${date.getFullYear()}`;
+}
+
 function dateKeyFromText(value: string | null | undefined): string | null {
   const normalized = String(value ?? "")
     .toLowerCase()
@@ -138,6 +145,15 @@ function dateKeyFromText(value: string | null | undefined): string | null {
   }
 
   return null;
+}
+
+function dateFromText(value: string | null | undefined): Date | null {
+  const key = dateKeyFromText(value);
+  if (!key) return null;
+
+  const [year, month, day] = key.split("-").map(Number);
+  const parsed = new Date(year, month - 1, day);
+  return parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day ? parsed : null;
 }
 
 function parseMinutes(value: string | null | undefined): number | null {
@@ -255,8 +271,31 @@ function nextAvailableDay(
   requestedDay: string,
   appointments: AppointmentSnapshot[],
   durationMinutes: number,
-  requestedTime?: string | null
+  requestedTime?: string | null,
+  requestedDayText?: string | null
 ): { day: string; slots: string[] } | null {
+  const requestedDate = dateFromText(requestedDayText);
+  if (requestedDate) {
+    for (let offset = 1; offset <= 21; offset += 1) {
+      const candidate = new Date(requestedDate);
+      candidate.setDate(requestedDate.getDate() + offset);
+      const day = JS_DAY_ORDER[candidate.getDay()];
+      const dayConfig = doctor.availability?.find((item) => normalizeDay(item.day) === day);
+      if (!dayConfig || dayConfig.blocked || dayConfig.leave) continue;
+
+      const slots = generateSlots(dayConfig, durationMinutes);
+      const candidateDateText = formatCalendarDate(candidate);
+      const occupied = occupiedSlotsForDay(doctor, day, appointments, slots, dateKeyFromText(candidateDateText));
+      const free = filterSlotsByPreference(slots.filter((slot) => !occupied.has(slot)), requestedTime);
+
+      if (free.length > 0) {
+        return { day: candidateDateText, slots: free };
+      }
+    }
+
+    return null;
+  }
+
   const startIndex = DAY_ORDER.indexOf(requestedDay);
   const orderedDays = [...DAY_ORDER.slice(startIndex + 1), ...DAY_ORDER.slice(0, startIndex + 1)];
 
@@ -276,8 +315,15 @@ function nextAvailableDay(
   return null;
 }
 
-function listPreview(slots: string[]): string {
-  return slots.slice(0, 2).join(" aur ");
+function promptJoiner(prompts: Required<AvailabilityPromptTemplates>): string {
+  const sample = Object.values(prompts).join(" ");
+  if (/[\u0A80-\u0AFF]/u.test(sample)) return "\u0a85\u0aa5\u0ab5\u0abe";
+  if (/[\u0900-\u097F]/u.test(sample)) return "\u092f\u093e";
+  return "aur";
+}
+
+function listPreview(slots: string[], prompts: Required<AvailabilityPromptTemplates>): string {
+  return slots.slice(0, 2).join(` ${promptJoiner(prompts)} `);
 }
 
 function requestedTimeLabel(value: string | null | undefined): string {
@@ -329,6 +375,8 @@ export function resolveAvailability(input: {
   const requestedDay = normalizeDay(input.requestedDay);
   const requestedTime = input.requestedTime ?? null;
   const requestedDateKey = dateKeyFromText(input.requestedDay);
+  const requestedDate = dateFromText(input.requestedDay);
+  const requestedDateText = requestedDate ? formatCalendarDate(requestedDate) : requestedDay;
   const durationMinutes = input.slotDurationMinutes ?? 90;
   const prompts = resolvePrompts(input.prompts);
 
@@ -336,7 +384,7 @@ export function resolveAvailability(input: {
     return null;
   }
 
-  const checkKey = [doctor.doctorId, requestedDay, requestedTime ?? "any"].join("|").toLowerCase();
+  const checkKey = [doctor.doctorId, requestedDateKey ?? requestedDay, requestedTime ?? "any"].join("|").toLowerCase();
 
   if (doctor.botSettings?.bookingEnabled === false) {
     return {
@@ -349,17 +397,17 @@ export function resolveAvailability(input: {
 
   const dayConfig = doctor.availability?.find((item) => normalizeDay(item.day) === requestedDay);
   if (!dayConfig || dayConfig.blocked || dayConfig.leave) {
-    const next = nextAvailableDay(doctor, requestedDay, input.appointments, durationMinutes);
+    const next = nextAvailableDay(doctor, requestedDay, input.appointments, durationMinutes, null, requestedDateText);
     return {
       status: "day_unavailable",
       checkKey,
       reply: next
         ? renderPrompt(prompts.availabilityDayUnavailableWithNext, {
-            day: requestedDay,
+            day: requestedDateText ?? requestedDay,
             nextDay: next.day,
-            slotPreview: listPreview(next.slots)
+            slotPreview: listPreview(next.slots, prompts)
           })
-        : renderPrompt(prompts.availabilityDayUnavailableNoNext, { day: requestedDay }),
+        : renderPrompt(prompts.availabilityDayUnavailableNoNext, { day: requestedDateText ?? requestedDay }),
       offeredDate: next?.day,
       offeredTime: next?.slots[0],
       offeredSlots: next?.slots.slice(0, 2) ?? []
@@ -379,12 +427,12 @@ export function resolveAvailability(input: {
       reply: isExactTime(requestedTime)
         ? renderPrompt(prompts.availabilityExactSlotAvailable, { time: requestedTime })
         : renderPrompt(prompts.availabilitySlotAvailable, {
-            day: requestedDay,
+            day: requestedDateText ?? requestedDay,
             timeContext: requestedTime ? `${requestedTime} mein ` : "",
             slot: matchingSlots[0],
-            slotPreview: listPreview(matchingSlots)
+            slotPreview: listPreview(matchingSlots, prompts)
           }),
-      selectedDate: requestedDay,
+      selectedDate: requestedDateText ?? requestedDay,
       selectedTime,
       offeredSlots: matchingSlots.slice(0, 2)
     };
@@ -394,10 +442,10 @@ export function resolveAvailability(input: {
     const alternative = freeSlots.slice(0, 2);
     if (alternative.length > 0) {
       const nextPreferred = isBucketPreference(requestedTime)
-        ? nextAvailableDay(doctor, requestedDay, input.appointments, durationMinutes, requestedTime)
+        ? nextAvailableDay(doctor, requestedDay, input.appointments, durationMinutes, requestedTime, requestedDateText)
         : null;
       const nextPreferredText = nextPreferred?.slots.length
-        ? ` ${nextPreferred.day} ko ${listPreview(nextPreferred.slots)} ${requestedTime} mein mil sakta hai. Dusra day chalega?`
+        ? ` ${nextPreferred.day} ko ${listPreview(nextPreferred.slots, prompts)} ${requestedTime} mein mil sakta hai. Dusra day chalega?`
         : "";
 
       return {
@@ -406,28 +454,28 @@ export function resolveAvailability(input: {
         reply: renderPrompt(prompts.availabilityTimeFull, {
           requestedTime: requestedTimeLabel(requestedTime),
           alternativeFrame: frameAlternativeSlots(alternative, prompts),
-          slotPreview: listPreview(alternative),
+          slotPreview: listPreview(alternative, prompts),
           slot1: alternative[0],
           slot2: alternative[1]
         }) + nextPreferredText,
-        offeredDate: nextPreferred?.day ?? requestedDay,
+        offeredDate: nextPreferred?.day ?? requestedDateText ?? requestedDay,
         offeredTime: nextPreferred?.slots[0] ?? alternative[0],
         offeredSlots: nextPreferred?.slots.slice(0, 2) ?? alternative
       };
     }
   }
 
-  const next = nextAvailableDay(doctor, requestedDay, input.appointments, durationMinutes);
+  const next = nextAvailableDay(doctor, requestedDay, input.appointments, durationMinutes, null, requestedDateText);
   return {
     status: "day_unavailable",
     checkKey,
     reply: next
       ? renderPrompt(prompts.availabilitySlotsFullWithNext, {
-          day: requestedDay,
+          day: requestedDateText ?? requestedDay,
           nextDay: next.day,
-          slotPreview: listPreview(next.slots)
+          slotPreview: listPreview(next.slots, prompts)
         })
-      : renderPrompt(prompts.availabilitySlotsFullNoNext, { day: requestedDay }),
+      : renderPrompt(prompts.availabilitySlotsFullNoNext, { day: requestedDateText ?? requestedDay }),
     offeredDate: next?.day,
     offeredTime: next?.slots[0],
     offeredSlots: next?.slots.slice(0, 2) ?? []

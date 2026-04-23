@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { fetchCalls, fetchSettings, fetchTranscript, type CallRecord, type SettingsRecord, type TranscriptEntry } from "../../../api";
+// THEMED: call log filters/table/transcript use shared dark-ready UI.
+import { fetchCalls, fetchSettings, fetchTranscript, type CallQualitySeverity, type CallRecord, type SettingsRecord, type TranscriptEntry } from "../../../api";
 import { useAuth } from "../../../context/AuthContext";
 import { Card, CardHeader } from "../../ui/Card";
 import { Table } from "../../ui/Table";
@@ -19,6 +20,60 @@ function fmtDuration(s: number) {
 }
 function fmtMoney(value: number | null | undefined) {
   return `₹${Number(value ?? 0).toFixed(4)}`;
+}
+
+function qualityVariant(severity: CallQualitySeverity | undefined) {
+  if (severity === "high") return "danger";
+  if (severity === "medium") return "warning";
+  if (severity === "low") return "info";
+  return "success";
+}
+
+function isQualityScored(summary: CallRecord["qualitySummary"] | undefined) {
+  return Boolean(summary?.updatedAt);
+}
+
+function fmtConfidence(confidence: number | null | undefined) {
+  if (confidence === null || typeof confidence === "undefined") return "—";
+  return `${Math.round(confidence * 100)}%`;
+}
+
+function reviewBadgeVariant(needsReview: boolean, confidence: number | null | undefined) {
+  if (needsReview || (confidence !== null && typeof confidence !== "undefined" && confidence < 0.72)) return "warning";
+  return "success";
+}
+
+function buildCallSummary(record: CallRecord | null | undefined) {
+  if (!record) return null;
+  const explicit = record.analysisSummary?.trim();
+  if (explicit) return explicit;
+
+  const analysisHistory = record.analysisHistory ?? [];
+  const latestTurn = analysisHistory[analysisHistory.length - 1];
+  const summaryParts: string[] = [];
+
+  if (latestTurn) {
+    summaryParts.push(`Latest intent: ${latestTurn.detectedIntent.replace(/_/g, " ")}.`);
+    if (latestTurn.confidence !== null) {
+      summaryParts.push(`Confidence ${Math.round(latestTurn.confidence * 100)}%.`);
+    }
+  }
+
+  if (record.outcome === "booked") {
+    summaryParts.push(`Appointment booked with ${record.selectedDoctor ?? "the selected doctor"}${record.appointmentDate ? ` on ${record.appointmentDate}` : ""}.`);
+  } else if (record.outcome === "rescheduled") {
+    summaryParts.push(`Appointment rescheduled with ${record.selectedDoctor ?? "the selected doctor"}${record.appointmentDate ? ` on ${record.appointmentDate}` : ""}.`);
+  } else if (record.outcome === "cancelled") {
+    summaryParts.push(`Appointment cancelled${record.selectedDoctor ? ` for ${record.selectedDoctor}` : ""}.`);
+  } else if (record.bookingResult) {
+    summaryParts.push(record.bookingResult.trim().endsWith(".") ? record.bookingResult : `${record.bookingResult}.`);
+  }
+
+  if (record.patientName) {
+    summaryParts.push(`Patient: ${record.patientName}.`);
+  }
+
+  return summaryParts.length > 0 ? summaryParts.join(" ") : null;
 }
 
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -167,6 +222,7 @@ export function CallLogsPage() {
     setTranscript([]);
     try {
       const full = await fetchTranscript(token!, call.sessionId);
+      setSelected(full);
       setTranscript(full.transcriptHistory ?? []);
     } catch { setTranscript(call.transcriptHistory ?? []); }
     finally { setTxLoading(false); }
@@ -269,6 +325,18 @@ export function CallLogsPage() {
               render: (r) => <span className="text-slate-500 text-xs">{(r.selectedSpecialization as string) || "—"}</span>,
             },
             {
+              key: "qualitySummary", header: "Quality",
+              render: (r) => {
+                const summary = (r as unknown as CallRecord).qualitySummary;
+                const scored = isQualityScored(summary);
+                return (
+                  <Badge variant={scored ? qualityVariant(summary?.severity) : "neutral"}>
+                    {scored ? `${summary?.score ?? 0}/100` : "Not scored"}
+                  </Badge>
+                );
+              },
+            },
+            {
               key: "durationSeconds", header: "Duration",
               render: (r) => <span className="text-slate-600 text-sm">{fmtDuration(r.durationSeconds as number)}</span>,
             },
@@ -307,53 +375,94 @@ export function CallLogsPage() {
         open={!!selected}
         onClose={() => setSelected(null)}
         title={`Transcript — ${selected?.callerNumber ?? ""}`}
-        size="xl"
+        size="lg"
       >
-        {/* Call meta */}
-        {selected && (
-          <div className="flex flex-wrap gap-3 mb-5 pb-4 border-b border-slate-100">
-            <span className="text-xs text-slate-500">
-              <span className="font-medium text-slate-700">Session: </span>
-              <span className="font-mono">{selected.sessionId}</span>
-            </span>
-            <span className="text-xs text-slate-500">
-              <span className="font-medium text-slate-700">Doctor: </span>
-              {selected.selectedDoctor || "—"}
-            </span>
-            <span className="text-xs text-slate-500">
-              <span className="font-medium text-slate-700">Appointment: </span>
-              {fmtAppointmentTarget(selected)}
-            </span>
-            <Badge variant={outcomeVariant(selected.outcome)}>{selected.outcome || "—"}</Badge>
-            <span className="text-xs text-slate-500">
-              <span className="font-medium text-slate-700">Duration: </span>
-              {fmtDuration(selected.durationSeconds)}
-            </span>
-          </div>
-        )}
         {txLoading ? (
           <div className="flex justify-center py-8"><PageLoader /></div>
-        ) : transcript.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-8">No transcript available for this call.</p>
         ) : (
           <div className="space-y-3">
-            {transcript.map((entry, i) => (
-              <div key={i} className={`flex gap-3 ${entry.speaker === "bot" ? "flex-row-reverse" : ""}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${entry.speaker === "bot" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"}`}>
-                  {entry.speaker === "bot" ? "AI" : "C"}
+            {selected && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Turn Analysis</h3>
+                  <Badge
+                    variant={
+                      isQualityScored(selected.qualitySummary)
+                        ? ((selected.qualitySummary?.score ?? 100) < 85 || selected.analysisHistory?.some((item) => item.needsReview) ? "warning" : "success")
+                        : "neutral"
+                    }
+                  >
+                    {isQualityScored(selected.qualitySummary)
+                      ? ((selected.qualitySummary?.score ?? 100) < 85 || selected.analysisHistory?.some((item) => item.needsReview) ? "Needs review" : "OK")
+                      : "Not scored"}
+                  </Badge>
                 </div>
-                <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${entry.speaker === "bot" ? "bg-indigo-50 text-indigo-900 rounded-tr-none" : "bg-slate-100 text-slate-800 rounded-tl-none"}`}>
-                  <p>{entry.text}</p>
-                  {entry.timestamp && (
-                    <p className="text-[10px] mt-1 opacity-50">{fmtDate(entry.timestamp)}</p>
+                <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-950/30">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Call Summary</p>
+                  <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+                    {buildCallSummary(selected) ?? "No analysis summary available for this call."}
+                  </p>
+                </div>
+                <div className="mt-3 space-y-3 max-h-80 overflow-y-auto pr-1">
+                  {(selected.analysisHistory ?? []).length === 0 ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No analysis summary available for this call.</p>
+                  ) : (
+                    (selected.analysisHistory ?? []).map((turn) => (
+                      <div
+                        key={turn.turn}
+                        className={`rounded-xl border p-3 ${turn.needsReview ? "border-amber-300 bg-amber-50/80 dark:border-amber-500/30 dark:bg-amber-500/10" : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950/40"}`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Turn {turn.turn}</p>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-50">{turn.detectedIntent}</p>
+                          </div>
+                          <Badge variant={reviewBadgeVariant(turn.needsReview, turn.confidence)}>
+                            {turn.needsReview ? "Needs review" : "Stable"}
+                          </Badge>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          <Badge variant={reviewBadgeVariant(turn.needsReview, turn.confidence)}>
+                            Confidence {fmtConfidence(turn.confidence)}
+                          </Badge>
+                          <Badge variant="info">Symptom {turn.symptom ?? "—"}</Badge>
+                          <Badge variant="neutral">Doctor {turn.doctor ?? "—"}</Badge>
+                          <Badge variant="neutral">Date {turn.date ?? "—"}</Badge>
+                          <Badge variant="neutral">Time {turn.time ?? "—"}</Badge>
+                          <Badge variant="neutral">Lang {turn.language}</Badge>
+                          <Badge variant={qualityVariant(turn.severity)}>{turn.score}/100</Badge>
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
-            ))}
-            <div className="sticky bottom-0 bg-white/95 pt-3">
-              <Button variant="secondary" onClick={() => setSelected(null)}>
+            )}
+            {transcript.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-8">No transcript available for this call.</p>
+            ) : (
+              transcript.map((entry, i) => (
+                <div key={i} className={`flex gap-3 ${entry.speaker === "bot" ? "flex-row-reverse" : ""}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${entry.speaker === "bot" ? "bg-indigo-100 text-indigo-700 dark:bg-sky-500/20 dark:text-sky-100" : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-100"}`}>
+                    {entry.speaker === "bot" ? "AI" : "C"}
+                  </div>
+                  <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${entry.speaker === "bot" ? "bg-indigo-50 text-indigo-900 rounded-tr-none dark:bg-sky-500/15 dark:text-sky-50" : "bg-slate-100 text-slate-800 rounded-tl-none dark:bg-slate-700 dark:text-slate-50"}`}>
+                    <p>{entry.text}</p>
+                    {entry.timestamp && (
+                      <p className="text-[10px] mt-1 opacity-50">{fmtDate(entry.timestamp)}</p>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+            <div className="sticky bottom-0 bg-white/95 pt-3 dark:bg-slate-800/95">
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="h-9 px-3 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+              >
                 X Close Transcript
-              </Button>
+              </button>
             </div>
           </div>
         )}

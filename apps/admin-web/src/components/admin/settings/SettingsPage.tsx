@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+// THEMED: settings exposes existing backed config only.
 import { fetchSettings, updateSettings, type SettingsRecord } from "../../../api";
 import { useAuth } from "../../../context/AuthContext";
 import { Card, CardHeader } from "../../ui/Card";

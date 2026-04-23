@@ -62,6 +62,56 @@ export type TranscriptEntry = {
   timestamp: string;
 };
 
+export type CallQualitySeverity = "info" | "low" | "medium" | "high";
+
+export type CallQualityIssue = {
+  code: string;
+  severity: CallQualitySeverity;
+  message: string;
+  evidence?: Record<string, string | null | undefined>;
+  suggestion?: string | null;
+};
+
+export type CallQualityTrace = {
+  turn: number;
+  callerText: string;
+  botReply: string;
+  beforeStage: string;
+  afterStage: string;
+  action: string;
+  intent: string;
+  sessionDiff: Record<string, { before: string | null; after: string | null }>;
+  issues: CallQualityIssue[];
+  createdAt: string;
+};
+
+export type CallQualitySummary = {
+  score: number;
+  severity: CallQualitySeverity;
+  issueCount: number;
+  highIssueCount: number;
+  tags: string[];
+  updatedAt: string | null;
+};
+
+export type CallTurnAnalysis = {
+  turn: number;
+  detectedIntent: string;
+  confidence: number | null;
+  symptom: string | null;
+  doctor: string | null;
+  date: string | null;
+  time: string | null;
+  language: string;
+  severity: CallQualitySeverity;
+  score: number;
+  needsReview: boolean;
+  transcript: string;
+  stage: string;
+  action: string;
+  createdAt: string;
+};
+
 export type CallRecord = {
   id: string;
   sessionId: string;
@@ -104,6 +154,10 @@ export type CallRecord = {
     createdAt: string;
   }>;
   transcriptHistory: TranscriptEntry[];
+  analysisHistory?: CallTurnAnalysis[];
+  analysisSummary?: string | null;
+  qualityTrace?: CallQualityTrace[];
+  qualitySummary?: CallQualitySummary;
   startedAt: string;
   updatedAt: string;
   endedAt: string | null;
@@ -147,6 +201,8 @@ export type SettingsRecord = {
     askPatientType?: string;
     confirmPrefix?: string;
     bookingConfirmed?: string;
+    bookingConfirmationSummary?: string;
+    bookingFinalSummary?: string;
     bookingCancelled?: string;
     bookingAlreadyComplete?: string;
     bookingAlreadyCancelled?: string;
@@ -169,6 +225,9 @@ export type SettingsRecord = {
     recoveryPatientName?: string;
     recoveryMobile?: string;
     recoveryConfirmation?: string;
+    availableDoctors?: string;
+    doctorDisambiguation?: string;
+    partialMobilePrompt?: string;
     availabilityExactSlotAvailable?: string;
     availabilitySlotAvailable?: string;
     availabilityTimeFull?: string;
@@ -191,6 +250,8 @@ export type SettingsRecord = {
     rescheduleDeclined?: string;
     rescheduleAlreadyComplete?: string;
     cancelNoActiveBooking?: string;
+    noActiveAppointmentSpecific?: string;
+    cancelAskPatientName?: string;
     cancelConfirm?: string;
     cancelDeclined?: string;
     cancelMissingBooking?: string;

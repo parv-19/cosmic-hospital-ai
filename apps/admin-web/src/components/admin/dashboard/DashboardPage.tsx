@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+// THEMED: dashboard keeps existing data calls with premium shared UI primitives.
 import {
   fetchAppointments,
   fetchDashboard,
@@ -183,7 +184,7 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Stat row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
         <StatCard
           label="Calls Today"
           value={totals?.callsToday ?? 0}
@@ -209,13 +210,6 @@ export function DashboardPage() {
           icon={<svg width="20" height="20" className="text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12" /></svg>}
         />
         <StatCard
-          label="Active Calls"
-          value={totals?.activeCalls ?? 0}
-          iconBg="bg-rose-100"
-          sub={totals?.activeCalls ? "Live right now" : undefined}
-          icon={<svg width="20" height="20" className="text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>}
-        />
-        <StatCard
           label="Total Cost"
           value={fmtMoney(totals?.totalCost)}
           iconBg="bg-cyan-100"
@@ -230,10 +224,10 @@ export function DashboardPage() {
           <Table
             columns={[
               { key: "doctorName", header: "Doctor" },
-              { key: "calls",      header: "Calls",    render: (r) => <span className="font-semibold text-slate-700">{r.calls as number}</span> },
-              { key: "booked",     header: "Booked",   render: (r) => <span className="text-emerald-700 font-medium">{r.booked as number}</span> },
-              { key: "transferred",header: "Transfers", render: (r) => <span className="text-amber-700 font-medium">{r.transferred as number}</span> },
-              { key: "failed",     header: "Failed",   render: (r) => <span className="text-red-600 font-medium">{r.failed as number}</span> },
+              { key: "calls",      header: "Calls",    render: (r) => <span className="font-bold text-slate-900 dark:text-white">{r.calls as number}</span> },
+              { key: "booked",     header: "Booked",   render: (r) => <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-bold text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200">{r.booked as number}</span> },
+              { key: "transferred",header: "Transfers", render: (r) => <span className="rounded-md bg-amber-100 px-2 py-0.5 font-bold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">{r.transferred as number}</span> },
+              { key: "failed",     header: "Failed",   render: (r) => <span className="rounded-md bg-red-100 px-2 py-0.5 font-bold text-red-700 dark:bg-red-500/15 dark:text-red-200">{r.failed as number}</span> },
             ]}
             data={stats.doctorStats as unknown as Record<string, unknown>[]}
           />
@@ -251,11 +245,11 @@ export function DashboardPage() {
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {slotSummaries.map(({ doctor, summary }) => (
-              <div key={doctor.doctorId} className="border border-slate-200 rounded-lg p-4 bg-white">
+              <div key={doctor.doctorId} className="rounded-xl border border-slate-300 bg-slate-50 p-4 shadow-sm transition-colors duration-200 dark:border-slate-700 dark:bg-slate-900/70">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-slate-800">{doctor.name}</p>
-                    <p className="text-xs text-slate-500">{doctor.specialization || doctor.specialty || "Doctor"}</p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">{doctor.name}</p>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{doctor.specialization || doctor.specialty || "Doctor"}</p>
                   </div>
                   <Badge variant={summary.availableSlots.length > 0 ? "success" : "warning"}>
                     {summary.availableSlots.length > 0 ? "Slots open" : summary.unavailableReason ?? "Full"}
@@ -263,11 +257,11 @@ export function DashboardPage() {
                 </div>
 
                 <div className="mt-3">
-                  <p className="text-[11px] font-semibold uppercase text-slate-400 mb-1">Available</p>
+                  <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Available</p>
                   <div className="flex flex-wrap gap-1.5">
                     {summary.availableSlots.length > 0 ? (
                       summary.availableSlots.slice(0, 8).map((slot) => (
-                        <span key={slot} className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700">
+                        <span key={slot} className="rounded-md border border-sky-300 bg-sky-100 px-2 py-1 text-[11px] font-bold text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-200">
                           {slot}
                         </span>
                       ))
@@ -285,11 +279,11 @@ export function DashboardPage() {
                 </div>
 
                 <div className="mt-3">
-                  <p className="text-[11px] font-semibold uppercase text-slate-400 mb-1">Booked</p>
+                  <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Booked</p>
                   <div className="flex flex-wrap gap-1.5">
                     {summary.bookedSlots.length > 0 ? (
                       summary.bookedSlots.slice(0, 6).map((slot) => (
-                        <span key={`${slot.time}-${slot.patientName}`} className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                        <span key={`${slot.time}-${slot.patientName}`} className="rounded-md border border-emerald-300 bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-200">
                           {slot.time} · {slot.patientName}
                         </span>
                       ))
@@ -338,7 +332,7 @@ export function DashboardPage() {
           columns={[
             {
               key: "callerNumber", header: "Caller",
-              render: (r) => <span className="font-mono text-xs text-slate-700">{r.callerNumber as string}</span>,
+              render: (r) => <span className="rounded-md bg-slate-200 px-2 py-1 font-mono text-xs font-bold text-slate-800 dark:bg-slate-700 dark:text-slate-100">{r.callerNumber as string}</span>,
             },
             {
               key: "outcome", header: "Outcome",
@@ -346,11 +340,11 @@ export function DashboardPage() {
             },
             {
               key: "appointmentDate", header: "Appointment",
-              render: (r) => <span className="text-slate-700 text-xs">{fmtAppointmentTarget(r as unknown as CallRecord)}</span>,
+              render: (r) => <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">{fmtAppointmentTarget(r as unknown as CallRecord)}</span>,
             },
             {
               key: "selectedDoctor", header: "Doctor",
-              render: (r) => <span className="text-slate-600">{(r.selectedDoctor as string) || "—"}</span>,
+              render: (r) => <span className="text-slate-600 dark:text-slate-300">{(r.selectedDoctor as string) || "—"}</span>,
             },
             {
               key: "durationSeconds", header: "Duration",
@@ -374,7 +368,7 @@ export function DashboardPage() {
             }] : []),
             {
               key: "startedAt", header: "Time",
-              render: (r) => <span className="text-xs text-slate-500">{fmtDate(r.startedAt as string)}</span>,
+              render: (r) => <span className="text-xs text-slate-500 dark:text-slate-400">{fmtDate(r.startedAt as string)}</span>,
             },
           ]}
           data={filteredCalls as unknown as Record<string, unknown>[]}
@@ -401,10 +395,10 @@ export function DashboardPage() {
           <div className="space-y-3">
             {transcript.map((entry, i) => (
               <div key={i} className={`flex gap-3 ${entry.speaker === "bot" ? "flex-row-reverse" : ""}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${entry.speaker === "bot" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600"}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${entry.speaker === "bot" ? "bg-indigo-100 text-indigo-700 dark:bg-sky-500/20 dark:text-sky-100" : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-100"}`}>
                   {entry.speaker === "bot" ? "AI" : "C"}
                 </div>
-                <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${entry.speaker === "bot" ? "bg-indigo-50 text-indigo-900 rounded-tr-none" : "bg-slate-100 text-slate-800 rounded-tl-none"}`}>
+                <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${entry.speaker === "bot" ? "bg-indigo-50 text-indigo-900 rounded-tr-none dark:bg-sky-500/15 dark:text-sky-50" : "bg-slate-100 text-slate-800 rounded-tl-none dark:bg-slate-700 dark:text-slate-50"}`}>
                   <p>{entry.text}</p>
                   {entry.timestamp && (
                     <p className="text-[10px] mt-1 opacity-50">{fmtDate(entry.timestamp)}</p>
@@ -412,11 +406,11 @@ export function DashboardPage() {
                 </div>
               </div>
             ))}
-            <div className="sticky bottom-0 bg-white/95 pt-3">
+            <div className="sticky bottom-0 bg-white/95 pt-3 dark:bg-slate-800/95">
               <button
                 type="button"
                 onClick={() => setTranscriptCall(null)}
-                className="h-9 px-3 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                className="h-9 px-3 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
               >
                 X Close Transcript
               </button>

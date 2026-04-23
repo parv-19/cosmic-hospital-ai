@@ -1,14 +1,16 @@
+// THEMED: shadcn-style button API while preserving existing imports.
 import React from "react";
+import { cn } from "../../lib/utils";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "success";
 type Size = "sm" | "md" | "lg";
 
 const VARIANTS: Record<Variant, string> = {
-  primary:   "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm",
-  secondary: "bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-sm",
-  ghost:     "bg-transparent hover:bg-slate-100 text-slate-600",
-  danger:    "bg-red-500 hover:bg-red-600 text-white shadow-sm",
-  success:   "bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm",
+  primary:   "bg-sky-500 text-white shadow-sm hover:bg-sky-600 focus-visible:ring-sky-500",
+  secondary: "border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 focus-visible:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700",
+  ghost:     "bg-transparent text-slate-600 hover:bg-slate-100 focus-visible:ring-sky-500 dark:text-slate-300 dark:hover:bg-slate-800",
+  danger:    "bg-red-500 text-white shadow-sm hover:bg-red-600 focus-visible:ring-red-500",
+  success:   "bg-emerald-500 text-white shadow-sm hover:bg-emerald-600 focus-visible:ring-emerald-500",
 };
 
 const SIZES: Record<Size, string> = {
@@ -36,12 +38,17 @@ export function Button({
 }: ButtonProps) {
   return (
     <button
-      className={`inline-flex items-center gap-2 font-medium transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
+      className={cn(
+        "inline-flex items-center gap-2 font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus-visible:ring-offset-slate-950",
+        VARIANTS[variant],
+        SIZES[size],
+        className
+      )}
       disabled={disabled || loading}
       {...props}
     >
       {loading ? (
-        <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+        <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
         </svg>

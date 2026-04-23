@@ -38,6 +38,56 @@ export type UsageLedgerEntry = {
   createdAt: string;
 };
 
+export type CallQualitySeverity = "info" | "low" | "medium" | "high";
+
+export type CallQualityIssue = {
+  code: string;
+  severity: CallQualitySeverity;
+  message: string;
+  evidence?: Record<string, string | null | undefined>;
+  suggestion?: string;
+};
+
+export type CallQualityTrace = {
+  turn: number;
+  callerText: string;
+  botReply: string;
+  beforeStage: BookingStage;
+  afterStage: BookingStage;
+  action: string;
+  intent: string;
+  sessionDiff: Record<string, { before: string | null; after: string | null }>;
+  issues: CallQualityIssue[];
+  createdAt: string;
+};
+
+export type CallQualitySummary = {
+  score: number;
+  severity: CallQualitySeverity;
+  issueCount: number;
+  highIssueCount: number;
+  tags: string[];
+  updatedAt: string | null;
+};
+
+export type CallTurnAnalysis = {
+  turn: number;
+  detectedIntent: string;
+  confidence: number | null;
+  symptom: string | null;
+  doctor: string | null;
+  date: string | null;
+  time: string | null;
+  language: string;
+  severity: CallQualitySeverity;
+  score: number;
+  needsReview: boolean;
+  transcript: string;
+  stage: BookingStage;
+  action: string;
+  createdAt: string;
+};
+
 export type ConversationMemory = {
   lastDoctor?: string | null;
   lastDay?: string | null;
@@ -88,12 +138,19 @@ export type DemoSessionRecord = {
   reschedule_available_slots?: string[];
   reschedule_confirmed_slot?: RescheduleSlotSelection | null;
   cancel_booking?: SessionAppointmentSnapshot | null;
+  cancel_lookup_doctor?: string | null;
+  cancel_lookup_date?: string | null;
+  cancel_lookup_time?: string | null;
   bookingResult: string | null;
   latestIntent: string | null;
   fallbackAttempts: number;
   transcriptHistory: TranscriptEntry[];
+  analysisHistory: CallTurnAnalysis[];
+  analysisSummary: string | null;
   botResponseHistory: TranscriptEntry[];
   usageLedger: UsageLedgerEntry[];
+  qualityTrace?: CallQualityTrace[];
+  qualitySummary?: CallQualitySummary;
   createdAt: string;
   updatedAt: string;
   frozenConfig?: any;

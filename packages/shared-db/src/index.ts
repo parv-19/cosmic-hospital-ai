@@ -114,6 +114,14 @@ const doctorBotSettingsSchema = new Schema(
       askPatientType: { type: String, default: "Kya yeh new patient hai ya follow-up?" },
       confirmPrefix: { type: String, default: "Main aapki details confirm karti hoon." },
       bookingConfirmed: { type: String, default: "Dhanyavaad. Aapki booking request dashboard par update kar di gayi hai." },
+      bookingConfirmationSummary: {
+        type: String,
+        default: "{{confirmPrefix}} {{date}} {{time}} par Dr. {{doctor}} ke saath booking hai, naam {{patientName}}, aur contact number {{contactNumber}} rahega. Sahi hai?"
+      },
+      bookingFinalSummary: {
+        type: String,
+        default: "{{bookingConfirmed}} {{date}} {{time}} par Dr. {{doctor}} ke saath appointment booked hai. Reference last 4: {{reference}}."
+      },
       bookingCancelled: {
         type: String,
         default: "The booking request has been cancelled in demo mode. If you want, we can start again with a new appointment request."
@@ -145,6 +153,9 @@ const doctorBotSettingsSchema = new Schema(
       recoveryPatientName: { type: String, default: "Naam clear nahi aaya. Kis naam se booking karoon?" },
       recoveryMobile: { type: String, default: "Mobile number clear nahi aaya. Ek baar number bata dijiye." },
       recoveryConfirmation: { type: String, default: "Confirm karna tha. Details sahi hain?" },
+      availableDoctors: { type: String, default: "Humare paas {{doctorList}} available hain. Kaunsa doctor chahiye?" },
+      doctorDisambiguation: { type: String, default: "Batayiye, kaunse doctor se appointment leni hai? Humare yaha {{doctorOptions}} available hain." },
+      partialMobilePrompt: { type: String, default: "{{digits}} mila. Baaki {{remainingDigits}} digit bata dijiye." },
       availabilityExactSlotAvailable: { type: String, default: "{{time}} ka slot available hai." },
       availabilitySlotAvailable: { type: String, default: "{{day}} {{timeContext}}{{slot}} ka slot available hai." },
       availabilityTimeFull: { type: String, default: "{{requestedTime}} available nahi hai. {{alternativeFrame}}. Kaunsa rakh doon?" },
@@ -179,6 +190,8 @@ const doctorBotSettingsSchema = new Schema(
       rescheduleDeclined: { type: String, default: "Theek hai, reschedule abhi cancel kar diya. Nayi appointment ya koi aur madad chahiye ho to bata dijiye." },
       rescheduleAlreadyComplete: { type: String, default: "Aapki appointment already reschedule ho chuki hai. Thank you." },
       cancelNoActiveBooking: { type: String, default: "Is number par koi active appointment nahi mili. Nayi appointment book karni ho to bata dijiye." },
+      noActiveAppointmentSpecific: { type: String, default: "Is number par {{criteria}} ke liye koi active appointment nahi mili." },
+      cancelAskPatientName: { type: String, default: "{{criteria}} ke liye kis patient ke naam par appointment cancel karni hai?" },
       cancelConfirm: { type: String, default: "Aapki booking {{appointment}} ke liye hai. Kya main ise cancel kar doon?" },
       cancelDeclined: { type: String, default: "Theek hai, appointment cancel nahi ki gayi. Koi aur madad chahiye ho to bata dijiye." },
       cancelMissingBooking: { type: String, default: "Active booking nahi mili. Koi aur madad chahiye ho to bata dijiye." },
@@ -248,6 +261,54 @@ const transcriptSchema = new Schema(
   { _id: false }
 );
 
+const callQualityIssueSchema = new Schema(
+  {
+    code: { type: String, required: true },
+    severity: { type: String, enum: ["info", "low", "medium", "high"], default: "info" },
+    message: { type: String, required: true },
+    evidence: { type: Schema.Types.Mixed, default: {} },
+    suggestion: { type: String, default: null }
+  },
+  { _id: false }
+);
+
+const callQualityTraceSchema = new Schema(
+  {
+    turn: { type: Number, required: true },
+    callerText: { type: String, default: "" },
+    botReply: { type: String, default: "" },
+    beforeStage: { type: String, required: true },
+    afterStage: { type: String, required: true },
+    action: { type: String, required: true },
+    intent: { type: String, required: true },
+    sessionDiff: { type: Schema.Types.Mixed, default: {} },
+    issues: { type: [callQualityIssueSchema], default: [] },
+    createdAt: { type: String, required: true }
+  },
+  { _id: false }
+);
+
+const callTurnAnalysisSchema = new Schema(
+  {
+    turn: { type: Number, required: true },
+    detectedIntent: { type: String, required: true },
+    confidence: { type: Number, default: null },
+    symptom: { type: String, default: null },
+    doctor: { type: String, default: null },
+    date: { type: String, default: null },
+    time: { type: String, default: null },
+    language: { type: String, required: true },
+    severity: { type: String, enum: ["info", "low", "medium", "high"], default: "info" },
+    score: { type: Number, default: 100 },
+    needsReview: { type: Boolean, default: false },
+    transcript: { type: String, default: "" },
+    stage: { type: String, required: true },
+    action: { type: String, required: true },
+    createdAt: { type: String, required: true }
+  },
+  { _id: false }
+);
+
 const callLogSchema = new Schema(
   {
     sessionId: { type: String, required: true, unique: true, index: true },
@@ -295,6 +356,17 @@ const callLogSchema = new Schema(
       default: []
     },
     transcriptHistory: { type: [transcriptSchema], default: [] },
+    analysisHistory: { type: [callTurnAnalysisSchema], default: [] },
+    analysisSummary: { type: String, default: null },
+    qualityTrace: { type: [callQualityTraceSchema], default: [] },
+    qualitySummary: {
+      score: { type: Number, default: 100 },
+      severity: { type: String, enum: ["info", "low", "medium", "high"], default: "info" },
+      issueCount: { type: Number, default: 0 },
+      highIssueCount: { type: Number, default: 0 },
+      tags: { type: [String], default: [] },
+      updatedAt: { type: String, default: null }
+    },
     startedAt: { type: String, required: true },
     updatedAt: { type: String, required: true },
     endedAt: { type: String, default: null }
@@ -453,11 +525,16 @@ export async function ensurePlatformSeedData(): Promise<void> {
               askPatientType: "Kya yeh new patient hai ya follow-up?",
               confirmPrefix: "Main aapki details confirm karti hoon.",
               bookingConfirmed: "Dhanyavaad. Aapki booking request dashboard par update kar di gayi hai.",
+              bookingConfirmationSummary: "{{confirmPrefix}} {{date}} {{time}} par Dr. {{doctor}} ke saath booking hai, naam {{patientName}}, aur contact number {{contactNumber}} rahega. Sahi hai?",
+              bookingFinalSummary: "{{bookingConfirmed}} {{date}} {{time}} par Dr. {{doctor}} ke saath appointment booked hai. Reference last 4: {{reference}}.",
               bookingCancelled: "The booking request has been cancelled in demo mode. If you want, we can start again with a new appointment request.",
               bookingAlreadyComplete: "Your appointment request is already confirmed in demo mode. Thank you for calling.",
               bookingAlreadyCancelled: "This demo booking was cancelled. You can start again by saying appointment book karna hai.",
               transferMessage: "I will transfer you to reception at the configured clinic number.",
               goodbyeMessage: "Thank you for calling. Goodbye.",
+              availableDoctors: "Humare paas {{doctorList}} available hain. Kaunsa doctor chahiye?",
+              doctorDisambiguation: "Batayiye, kaunse doctor se appointment leni hai? Humare yaha {{doctorOptions}} available hain.",
+              partialMobilePrompt: "{{digits}} mila. Baaki {{remainingDigits}} digit bata dijiye.",
               rescheduleNoActiveBooking: "Is number par koi active appointment nahi mili. Nayi appointment book karni ho to bata dijiye.",
               rescheduleFoundBooking: "Aapki booking {{appointment}} ke liye hai. Kis din reschedule karna hai?",
               rescheduleAskNewDay: "Kis din reschedule karna hai? Monday se Sunday mein se din bata dijiye.",
@@ -470,6 +547,8 @@ export async function ensurePlatformSeedData(): Promise<void> {
               rescheduleDeclined: "Theek hai, reschedule abhi cancel kar diya. Nayi appointment ya koi aur madad chahiye ho to bata dijiye.",
               rescheduleAlreadyComplete: "Aapki appointment already reschedule ho chuki hai. Thank you.",
               cancelNoActiveBooking: "Is number par koi active appointment nahi mili. Nayi appointment book karni ho to bata dijiye.",
+              noActiveAppointmentSpecific: "Is number par {{criteria}} ke liye koi active appointment nahi mili.",
+              cancelAskPatientName: "{{criteria}} ke liye kis patient ke naam par appointment cancel karni hai?",
               cancelConfirm: "Aapki booking {{appointment}} ke liye hai. Kya main ise cancel kar doon?",
               cancelDeclined: "Theek hai, appointment cancel nahi ki gayi. Koi aur madad chahiye ho to bata dijiye.",
               cancelMissingBooking: "Active booking nahi mili. Koi aur madad chahiye ho to bata dijiye.",
