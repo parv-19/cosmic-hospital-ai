@@ -112,12 +112,12 @@ export function SettingsPage() {
     <div className="space-y-6">
       {/* Doctor selector if multiple */}
       {records.length > 1 && (
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex flex-wrap gap-2">
           {records.map((r) => (
             <button
               key={r.doctorId}
               onClick={() => selectRecord(r)}
-              className={`text-sm px-4 py-2 rounded-lg border transition-all ${selected?.doctorId === r.doctorId ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"}`}
+              className={`rounded-2xl border px-4 py-2 text-sm font-semibold transition-all ${selected?.doctorId === r.doctorId ? "border-sky-400/40 bg-[linear-gradient(135deg,#38bdf8_0%,#2563eb_100%)] text-white shadow-[0_14px_30px_rgba(37,99,235,0.22)]" : "border-white/90 bg-white/80 text-slate-600 shadow-[0_10px_24px_rgba(148,163,184,0.10)] hover:border-sky-200 hover:text-sky-700 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:shadow-none dark:hover:border-sky-500/40 dark:hover:bg-slate-800 dark:hover:text-sky-200"}`}
             >
               {r.doctorName || r.doctorId}
             </button>
@@ -181,24 +181,24 @@ export function SettingsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="text-left text-xs font-semibold text-slate-500 pb-2 pr-4">Day</th>
-                  <th className="text-left text-xs font-semibold text-slate-500 pb-2 pr-4">Start</th>
-                  <th className="text-left text-xs font-semibold text-slate-500 pb-2 pr-4">End</th>
-                  <th className="text-left text-xs font-semibold text-slate-500 pb-2 pr-4">Blocked</th>
-                  <th className="text-left text-xs font-semibold text-slate-500 pb-2 pr-4">Leave</th>
-                  <th className="text-right text-xs font-semibold text-slate-500 pb-2">Action</th>
+                <tr className="border-b border-slate-100 dark:border-slate-700/80">
+                  <th className="pb-2 pr-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-300">Day</th>
+                  <th className="pb-2 pr-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-300">Start</th>
+                  <th className="pb-2 pr-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-300">End</th>
+                  <th className="pb-2 pr-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-300">Blocked</th>
+                  <th className="pb-2 pr-4 text-left text-xs font-semibold text-slate-500 dark:text-slate-300">Leave</th>
+                  <th className="pb-2 text-right text-xs font-semibold text-slate-500 dark:text-slate-300">Action</th>
                 </tr>
               </thead>
               <tbody className="space-y-1">
                 {normalizeAvailability(form.availability).map((slot, i) => (
-                  <tr key={slot.day} className="border-b border-slate-50">
-                    <td className="py-2 pr-4 font-medium text-slate-700 whitespace-nowrap">
+                  <tr key={slot.day} className="border-b border-slate-50 dark:border-slate-800">
+                    <td className="whitespace-nowrap py-2 pr-4 font-medium text-slate-700 dark:text-slate-100">
                       <select
                         disabled={!canEdit}
                         value={slot.day}
                         onChange={(e) => updateAvailability(i, "day", e.target.value)}
-                        className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       >
                         {DAYS.map((day) => <option key={day} value={day}>{day}</option>)}
                       </select>
@@ -208,7 +208,7 @@ export function SettingsPage() {
                         type="time" disabled={!canEdit}
                         value={slot.start}
                         onChange={(e) => updateAvailability(i, "start", e.target.value)}
-                        className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       />
                     </td>
                     <td className="py-2 pr-4">
@@ -216,7 +216,7 @@ export function SettingsPage() {
                         type="time" disabled={!canEdit}
                         value={slot.end}
                         onChange={(e) => updateAvailability(i, "end", e.target.value)}
-                        className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       />
                     </td>
                     <td className="py-2 pr-4">
@@ -246,12 +246,12 @@ export function SettingsPage() {
         )}
       </Card>
 
-      {/* Save Bar */}
+      {/* Save Actions */}
       {canEdit && (
-        <div className="sticky bottom-4 flex items-center justify-between bg-white border border-slate-200 rounded-xl shadow-card px-5 py-3">
+        <div className="flex items-center justify-between rounded-[24px] border border-white/90 bg-white/80 px-5 py-3 shadow-[0_18px_42px_rgba(148,163,184,0.14)] backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
           <div>
             {error && <p className="text-xs text-red-500">{error}</p>}
-            {saved && <p className="text-xs text-emerald-600 font-medium">✓ Settings saved successfully</p>}
+            {saved && <p className="text-xs font-medium text-emerald-600">Settings saved successfully</p>}
           </div>
           <Button id="save-settings" variant="primary" loading={saving} onClick={handleSave}>
             Save Settings
@@ -277,7 +277,7 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         placeholder={placeholder}
-        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
       />
     </div>
   );

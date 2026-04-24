@@ -788,7 +788,9 @@ async function finalizeCurrentUtterance(state, reason) {
             if (transferNumber) {
                 state.transferPending = true;
                 state.transferNumber = transferNumber;
-                replyText = TRANSFER_CONFIRMATION_MESSAGE;
+                if (!String(replyText || '').trim()) {
+                    replyText = TRANSFER_CONFIRMATION_MESSAGE;
+                }
                 logger.log(`[${state.uuid || 'demo-session'}] transfer queued number=${state.transferNumber}`);
             } else {
                 state.transferPending = false;

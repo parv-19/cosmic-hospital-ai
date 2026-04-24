@@ -5,12 +5,12 @@ import { cn } from "../../lib/utils";
 type Variant = "success" | "warning" | "danger" | "info" | "neutral" | "live";
 
 const VARIANTS: Record<Variant, string> = {
-  success: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300",
-  warning: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
-  danger:  "bg-red-100 text-red-600 dark:bg-red-500/15 dark:text-red-300",
-  info:    "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300",
-  neutral: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
-  live:    "bg-emerald-500 text-white",
+  success: "border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/15 dark:text-emerald-300",
+  warning: "border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/15 dark:text-amber-300",
+  danger:  "border border-red-200 bg-red-50 text-red-600 dark:border-red-500/20 dark:bg-red-500/15 dark:text-red-300",
+  info:    "border border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/15 dark:text-sky-300",
+  neutral: "border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-700 dark:text-slate-300",
+  live:    "border border-emerald-500 bg-emerald-500 text-white",
 };
 
 interface BadgeProps {
@@ -22,7 +22,7 @@ interface BadgeProps {
 
 export function Badge({ variant = "neutral", children, dot = false, className = "" }: BadgeProps) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors duration-200", VARIANTS[variant], className)}>
+    <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors duration-200", VARIANTS[variant], className)}>
       {dot && (
         <span
           className={cn("h-1.5 w-1.5 flex-shrink-0 rounded-full", variant === "live" ? "bg-white" : "bg-current")}

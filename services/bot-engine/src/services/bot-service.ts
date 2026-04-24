@@ -161,6 +161,7 @@ type ConversationPrompts = {
   rescheduleAlreadyComplete: string;
   cancelNoActiveBooking: string;
   noActiveAppointmentSpecific: string;
+  cancelAskDetails: string;
   cancelAskPatientName: string;
   cancelConfirm: string;
   cancelDeclined: string;
@@ -289,6 +290,7 @@ const DEFAULT_PROMPTS: ConversationPrompts = {
   rescheduleAlreadyComplete: "Aapki appointment already reschedule ho chuki hai. Thank you.",
   cancelNoActiveBooking: "Is number par koi active appointment nahi mili. Nayi appointment book karni ho to bata dijiye.",
   noActiveAppointmentSpecific: "Is number par {{criteria}} ke liye koi active appointment nahi mili.",
+  cancelAskDetails: "Kaunsi appointment cancel karni hai? Patient name, doctor name, ya din bata dijiye.",
   cancelAskPatientName: "{{criteria}} ke liye kis patient ke naam par appointment cancel karni hai?",
   cancelConfirm: "Aapki booking {{appointment}} ke liye hai. Kya main ise cancel kar doon?",
   cancelDeclined: "Theek hai, appointment cancel nahi ki gayi. Koi aur madad chahiye ho to bata dijiye.",
@@ -357,6 +359,7 @@ const GUJARATI_PROMPT_DEFAULTS: Partial<ConversationPrompts> = {
   rescheduleAlreadyComplete: "તમારી અપોઇન્ટમેન્ટ પહેલેથી ફરીથી નક્કી થઈ ચૂકી છે. આભાર.",
   cancelNoActiveBooking: "આ નંબર પર કોઈ active appointment મળી નથી. નવી અપોઇન્ટમેન્ટ book કરવી હોય તો કહેજો.",
   noActiveAppointmentSpecific: "આ નંબર પર {{criteria}} માટે કોઈ active appointment મળી નથી.",
+  cancelAskDetails: "કઈ અપોઇન્ટમેન્ટ રદ કરવી છે? દર્દીનું નામ, ડોક્ટરનું નામ, અથવા કયો દિવસ હતો એ કહો.",
   cancelAskPatientName: "{{criteria}} માટે કયા દર્દીના નામે અપોઇન્ટમેન્ટ રદ કરવી છે?",
   cancelConfirm: "તમારી અપોઇન્ટમેન્ટ {{appointment}} માટે છે. શું હું તેને રદ કરી દઉં?",
   cancelDeclined: "બરાબર, અપોઇન્ટમેન્ટ રદ કરી નથી. બીજી મદદ જોઈએ તો કહેજો.",
@@ -425,6 +428,7 @@ const ENGLISH_PROMPT_DEFAULTS: Partial<ConversationPrompts> = {
   rescheduleAlreadyComplete: "Your appointment is already rescheduled. Thank you.",
   cancelNoActiveBooking: "I could not find an active appointment for this number. Tell me if you want to book a new appointment.",
   noActiveAppointmentSpecific: "I could not find an active appointment for {{criteria}} on this number.",
+  cancelAskDetails: "Which appointment should I cancel? Please tell me the patient name, doctor name, or date.",
   cancelAskPatientName: "For {{criteria}}, which patient name should I cancel the appointment for?",
   cancelConfirm: "Your booking is for {{appointment}}. Should I cancel it?",
   cancelDeclined: "Okay, I have not cancelled the appointment. Tell me if you need anything else.",
@@ -687,8 +691,18 @@ function matchHumanTransferIntent(normalizedTranscript: string): boolean {
     "\u0ab0\u0abf\u0ab8\u0ac7\u0aaa\u0acd\u0ab6\u0aa8\u0abf\u0ab8\u0acd\u0a9f",
     "\u0ab8\u0acd\u0a9f\u0abe\u0aab \u0ab8\u0abe\u0aa5\u0ac7 \u0ab5\u0abe\u0aa4",
     "\u0a95\u0acb\u0a88 \u0aae\u0abe\u0aa3\u0ab8 \u0ab8\u0abe\u0aa5\u0ac7 \u0ab5\u0abe\u0aa4",
+    "\u0a95\u0acb\u0a88 \u0aae\u0abe\u0aa3\u0ab8 \u0a9c\u0acb\u0aa1\u0ac7 \u0ab5\u0abe\u0aa4",
+    "\u0aae\u0abe\u0aa3\u0ab8 \u0a9c\u0acb\u0aa1\u0ac7 \u0ab5\u0abe\u0aa4",
+    "\u0aae\u0abe\u0aa3\u0ab8 \u0ab8\u0abe\u0aa5\u0ac7 \u0ab5\u0abe\u0aa4",
+    "\u0ab0\u0abf\u0ab8\u0ac7\u0aaa\u0acd\u0ab6\u0aa8 \u0a9c\u0acb\u0aa1\u0ac7 \u0ab5\u0abe\u0aa4",
+    "\u0ab0\u0abf\u0ab8\u0ac7\u0aaa\u0acd\u0ab6\u0aa8\u0abf\u0ab8\u0acd\u0a9f \u0a9c\u0acb\u0aa1\u0ac7 \u0ab5\u0abe\u0aa4",
+    "\u0a95\u0ab0\u0abe\u0ab5\u0acb",
+    "\u0ab9\u0ab0\u0abe\u0ab5\u0acb",
     "àª®àª¾àª£àª¸ àª¸àª¾àª¥à«‡ àªµàª¾àª¤",
+    "àª®àª¾àª£àª¸ àªœà«‹àª¡à«‡ àªµàª¾àª¤",
+    "àª•à«‹àªˆ àª®àª¾àª£àª¸ àªœà«‹àª¡à«‡ àªµàª¾àª¤",
     "àª°àª¿àª¸à«‡àªªà«àª¶àª¨ àª¸àª¾àª¥à«‡ àªµàª¾àª¤",
+    "àª°àª¿àª¸à«‡àªªà«àª¶àª¨ àªœà«‹àª¡à«‡ àªµàª¾àª¤",
     "àª«à«àª°àª¨à«àªŸ àª¡à«‡àª¸à«àª•",
     "àª“àªªàª°à«‡àªŸàª°",
     "àª²àª¾àª‡àªµ àªàªœàª¨à«àªŸ",
@@ -698,6 +712,28 @@ function matchHumanTransferIntent(normalizedTranscript: string): boolean {
     "\u0a95\u0aa8\u0ac7\u0a95\u0acd\u0a9f \u0a95\u0ab0\u0acb",
     "\u0a9f\u0acd\u0ab0\u0abe\u0aa8\u0acd\u0ab8\u0aab\u0ab0 \u0a95\u0ab0\u0acb"
   ].some((phrase) => normalizedTranscript.includes(phrase))) {
+    return true;
+  }
+
+  const hasGujaratiHumanNoun = [
+    "\u0aae\u0abe\u0aa3\u0ab8",
+    "\u0aae\u0abe\u0aa8\u0ab8",
+    "\u0ab0\u0abf\u0ab8\u0ac7\u0aaa\u0acd\u0ab6\u0aa8",
+    "\u0ab0\u0abf\u0ab8\u0ac7\u0aaa\u0acd\u0ab6\u0aa8\u0abf\u0ab8\u0acd\u0a9f",
+    "\u0ab8\u0acd\u0a9f\u0abe\u0aab",
+    "\u0a91\u0aaa\u0ab0\u0ac7\u0a9f\u0ab0",
+    "\u0aab\u0acd\u0ab0\u0aa8\u0acd\u0a9f \u0aa1\u0ac7\u0ab8\u0acd\u0a95"
+  ].some((phrase) => normalizedTranscript.includes(phrase));
+  const hasGujaratiTransferVerb = [
+    "\u0ab5\u0abe\u0aa4",
+    "\u0a95\u0ab0\u0abe\u0ab5\u0acb",
+    "\u0ab9\u0ab0\u0abe\u0ab5\u0acb",
+    "\u0a9c\u0acb\u0aa1\u0ac7",
+    "\u0a95\u0aa8\u0ac7\u0a95\u0acd\u0a9f",
+    "\u0a9f\u0acd\u0ab0\u0abe\u0aa8\u0acd\u0ab8\u0aab\u0ab0"
+  ].some((phrase) => normalizedTranscript.includes(phrase));
+
+  if (hasGujaratiHumanNoun && hasGujaratiTransferVerb) {
     return true;
   }
 
@@ -2102,6 +2138,16 @@ function matchCancelAppointmentIntent(normalizedTranscript: string): boolean {
     "à¤¬à¥à¤•à¤¿à¤‚à¤— à¤•à¥ˆà¤‚à¤¸à¤¿à¤²",
     "à¤¬à¥à¤•à¤¿à¤‚à¤— à¤•à¥‡à¤‚à¤¸à¤²",
     "booking radd karo",
+    "mare appointment cancel karvi che",
+    "mare cancel karvi che",
+    "mari appointment cancel karvi che",
+    "mari appointment radd karvi che",
+    "appointment radd karvi che",
+    "appointment cancel karvi che",
+    "aa appointment cancel karvi che",
+    "aa appointment radd karvi che",
+    "doctor sathe ni appointment cancel karvi che",
+    "sahil sathe ni appointment cancel karvi che",
     "aa cancel karo",
     "mari booking hataavi do",
     "slot remove karo",
@@ -4853,7 +4899,7 @@ function buildConfirmationSummary(session: DemoSessionRecord, prompts: Conversat
   const time = session.preferredTime ?? "selected time";
   const timePhrase = formatBookingTimePhraseForPrompt(time, prompts);
   const patientName = session.patientName ?? "patient";
-  const contactNumber = session.contactNumber ?? "not provided";
+  const contactNumber = formatPhoneNumberForSpeech(session.contactNumber ?? "not provided", prompts);
 
   return renderPrompt(prompts.bookingConfirmationSummary, {
     confirmPrefix: prompts.confirmPrefix,
@@ -4890,6 +4936,175 @@ function isGujaratiPromptSet(prompts: ConversationPrompts): boolean {
 function isEnglishPromptSet(prompts: ConversationPrompts): boolean {
   const sample = `${prompts.askDate} ${prompts.confirmPrefix} ${prompts.bookingConfirmed}`;
   return !hasGujaratiText(sample) && !hasDevanagariText(sample) && !looksHinglishPrompt(sample);
+}
+
+function isHindiPromptSet(prompts: ConversationPrompts): boolean {
+  return hasDevanagariText(`${prompts.askDate} ${prompts.askTime} ${prompts.bookingFinalSummary}`);
+}
+
+const GUJARATI_DIGIT_WORDS = ["શૂન્ય", "એક", "બે", "ત્રણ", "ચાર", "પાંચ", "છ", "સાત", "આઠ", "નવ"];
+const HINDI_DIGIT_WORDS = ["शून्य", "एक", "दो", "तीन", "चार", "पाँच", "छह", "सात", "आठ", "नौ"];
+const GUJARATI_MONTHS_SPOKEN: Record<string, string> = {
+  january: "જાન્યુઆરી",
+  february: "ફેબ્રુઆરી",
+  march: "માર્ચ",
+  april: "એપ્રિલ",
+  may: "મે",
+  june: "જૂન",
+  july: "જુલાઈ",
+  august: "ઓગસ્ટ",
+  september: "સપ્ટેમ્બર",
+  october: "ઓક્ટોબર",
+  november: "નવેમ્બર",
+  december: "ડિસેમ્બર"
+};
+const HINDI_MONTHS_SPOKEN: Record<string, string> = {
+  january: "जनवरी",
+  february: "फ़रवरी",
+  march: "मार्च",
+  april: "अप्रैल",
+  may: "मई",
+  june: "जून",
+  july: "जुलाई",
+  august: "अगस्त",
+  september: "सितंबर",
+  october: "अक्टूबर",
+  november: "नवंबर",
+  december: "दिसंबर"
+};
+const GUJARATI_DAYS_SPOKEN: Record<string, string> = {
+  monday: "સોમવારે",
+  tuesday: "મંગળવારે",
+  wednesday: "બુધવારે",
+  thursday: "ગુરુવારે",
+  friday: "શુક્રવારે",
+  saturday: "શનિવારે",
+  sunday: "રવિવારે"
+};
+const HINDI_DAYS_SPOKEN: Record<string, string> = {
+  monday: "सोमवार",
+  tuesday: "मंगलवार",
+  wednesday: "बुधवार",
+  thursday: "गुरुवार",
+  friday: "शुक्रवार",
+  saturday: "शनिवार",
+  sunday: "रविवार"
+};
+const GUJARATI_DAY_NUMBER_WORDS: Record<number, string> = {
+  1: "એક", 2: "બે", 3: "ત્રણ", 4: "ચાર", 5: "પાંચ", 6: "છ",
+  7: "સાત", 8: "આઠ", 9: "નવ", 10: "દસ", 11: "અગિયાર", 12: "બાર",
+  13: "તેર", 14: "ચૌદ", 15: "પંદર", 16: "સોળ", 17: "સત્તર", 18: "અઢાર",
+  19: "ઓગણીસ", 20: "વીસ", 21: "એકવીસ", 22: "બાવીસ", 23: "તેવીસ", 24: "ચોવીસ",
+  25: "પચ્ચીસ", 26: "છવીસ", 27: "સત્તાવીસ", 28: "અઠ્ઠાવીસ", 29: "ઓગણત્રીસ", 30: "ત્રીસ", 31: "એકત્રીસ"
+};
+const HINDI_DAY_NUMBER_WORDS: Record<number, string> = {
+  1: "एक", 2: "दो", 3: "तीन", 4: "चार", 5: "पाँच", 6: "छह",
+  7: "सात", 8: "आठ", 9: "नौ", 10: "दस", 11: "ग्यारह", 12: "बारह",
+  13: "तेरह", 14: "चौदह", 15: "पंद्रह", 16: "सोलह", 17: "सत्रह", 18: "अठारह",
+  19: "उन्नीस", 20: "बीस", 21: "इक्कीस", 22: "बाईस", 23: "तेईस", 24: "चौबीस",
+  25: "पच्चीस", 26: "छब्बीस", 27: "सत्ताईस", 28: "अट्ठाईस", 29: "उनतीस", 30: "तीस", 31: "इकतीस"
+};
+const GUJARATI_HOUR_WORDS: Record<number, string> = {
+  1: "એક", 2: "બે", 3: "ત્રણ", 4: "ચાર", 5: "પાંચ", 6: "છ",
+  7: "સાત", 8: "આઠ", 9: "નવ", 10: "દસ", 11: "અગિયાર", 12: "બાર"
+};
+const HINDI_HOUR_WORDS: Record<number, string> = {
+  1: "एक", 2: "दो", 3: "तीन", 4: "चार", 5: "पाँच", 6: "छह",
+  7: "सात", 8: "आठ", 9: "नौ", 10: "दस", 11: "ग्यारह", 12: "बारह"
+};
+
+function formatGujaratiYear(year: number): string {
+  if (year === 2026) return "બે હજાર છવીસ";
+  if (year >= 2000 && year < 2100) {
+    const suffix = year % 100;
+    return suffix === 0 ? "બે હજાર" : `બે હજાર ${GUJARATI_DAY_NUMBER_WORDS[suffix] ?? String(suffix)}`;
+  }
+  return String(year);
+}
+
+function formatHindiYear(year: number): string {
+  if (year === 2026) return "दो हजार छब्बीस";
+  if (year >= 2000 && year < 2100) {
+    const suffix = year % 100;
+    return suffix === 0 ? "दो हजार" : `दो हजार ${HINDI_DAY_NUMBER_WORDS[suffix] ?? String(suffix)}`;
+  }
+  return String(year);
+}
+
+function spokenTimeContext(hours24: number, prompts: ConversationPrompts): string {
+  if (isGujaratiPromptSet(prompts)) {
+    if (hours24 < 12) return "સવારે";
+    if (hours24 < 17) return "બપોરે";
+    if (hours24 < 21) return "સાંજે";
+    return "રાત્રે";
+  }
+  if (isHindiPromptSet(prompts)) {
+    if (hours24 < 12) return "सुबह";
+    if (hours24 < 17) return "दोपहर";
+    if (hours24 < 21) return "शाम";
+    return "रात";
+  }
+  return "";
+}
+
+function formatPhoneNumberForSpeech(value: string, prompts: ConversationPrompts): string {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return value;
+  if (isGujaratiPromptSet(prompts)) {
+    return digits.split("").map((digit) => GUJARATI_DIGIT_WORDS[Number(digit)] ?? digit).join(" ");
+  }
+  if (isHindiPromptSet(prompts)) {
+    return digits.split("").map((digit) => HINDI_DIGIT_WORDS[Number(digit)] ?? digit).join(" ");
+  }
+  return value;
+}
+
+function formatSpokenTimeFromLabel(value: string, prompts: ConversationPrompts): string {
+  const minutes = parseSlotMinutes(value);
+  if (minutes === null) {
+    if (isGujaratiPromptSet(prompts)) {
+      if (value.toLowerCase() === "morning") return "સવારે";
+      if (value.toLowerCase() === "afternoon") return "બપોરે";
+      if (value.toLowerCase() === "evening") return "સાંજે";
+    }
+    if (isHindiPromptSet(prompts)) {
+      if (value.toLowerCase() === "morning") return "सुबह";
+      if (value.toLowerCase() === "afternoon") return "दोपहर";
+      if (value.toLowerCase() === "evening") return "शाम";
+    }
+    return value;
+  }
+
+  const hours24 = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  const hours12 = hours24 % 12 || 12;
+  const nextHour12 = (hours12 % 12) + 1;
+
+  if (isGujaratiPromptSet(prompts)) {
+    const hourWord = GUJARATI_HOUR_WORDS[hours12] ?? String(hours12);
+    const nextHourWord = GUJARATI_HOUR_WORDS[nextHour12] ?? String(nextHour12);
+    const context = spokenTimeContext(hours24, prompts);
+    if (mins === 0) return `${hourWord} વાગ્યે ${context}`;
+    if (mins === 30) return `સાડા ${hourWord} વાગ્યે ${context}`;
+    if (mins === 15) return `${hourWord} ને પંદર વાગ્યે ${context}`;
+    if (mins === 45) return `${nextHourWord} વાગ્યાથી પંદર મિનિટ ઓછા ${context}`;
+    const minuteWord = GUJARATI_DAY_NUMBER_WORDS[mins] ?? String(mins);
+    return `${hourWord} ને ${minuteWord} મિનિટે ${context}`;
+  }
+
+  if (isHindiPromptSet(prompts)) {
+    const hourWord = HINDI_HOUR_WORDS[hours12] ?? String(hours12);
+    const nextHourWord = HINDI_HOUR_WORDS[nextHour12] ?? String(nextHour12);
+    const context = spokenTimeContext(hours24, prompts);
+    if (mins === 0) return `${context} ${hourWord} बजे`.trim();
+    if (mins === 30) return `${context} साढ़े ${hourWord} बजे`.trim();
+    if (mins === 15) return `${context} ${hourWord} बजकर पंद्रह मिनट`.trim();
+    if (mins === 45) return `${context} ${nextHourWord} बजने में पंद्रह मिनट`.trim();
+    const minuteWord = HINDI_DAY_NUMBER_WORDS[mins] ?? String(mins);
+    return `${context} ${hourWord} बजकर ${minuteWord} मिनट`.trim();
+  }
+
+  return `at ${value}`;
 }
 
 function formatBookingDateForPrompt(value: string, prompts: ConversationPrompts): string {
@@ -4949,14 +5164,16 @@ function formatBookingDateForPrompt(value: string, prompts: ConversationPrompts)
 
   if (isGujaratiPromptSet(prompts)) {
     if (dateMatch) {
-      return `${gujaratiDays[dateMatch[1].toLowerCase()]} ${dateMatch[2]} ${gujaratiMonths[dateMatch[3].toLowerCase()]} ${dateMatch[4]}`;
+      const day = Number(dateMatch[2]);
+      return `${GUJARATI_DAYS_SPOKEN[dateMatch[1].toLowerCase()] ?? gujaratiDays[dateMatch[1].toLowerCase()]} ${GUJARATI_DAY_NUMBER_WORDS[day] ?? dateMatch[2]} ${GUJARATI_MONTHS_SPOKEN[dateMatch[3].toLowerCase()] ?? gujaratiMonths[dateMatch[3].toLowerCase()]} ${formatGujaratiYear(Number(dateMatch[4]))}`;
     }
     return gujaratiDays[normalizedDateText] ?? normalizedValue;
   }
 
-  if (hasDevanagariText(`${prompts.askDate} ${prompts.askTime} ${prompts.bookingFinalSummary}`)) {
+  if (isHindiPromptSet(prompts)) {
     if (dateMatch) {
-      return `${hindiDays[dateMatch[1].toLowerCase()]} ${dateMatch[2]} ${hindiMonths[dateMatch[3].toLowerCase()]} ${dateMatch[4]}`;
+      const day = Number(dateMatch[2]);
+      return `${HINDI_DAYS_SPOKEN[dateMatch[1].toLowerCase()] ?? hindiDays[dateMatch[1].toLowerCase()]} ${HINDI_DAY_NUMBER_WORDS[day] ?? dateMatch[2]} ${HINDI_MONTHS_SPOKEN[dateMatch[3].toLowerCase()] ?? hindiMonths[dateMatch[3].toLowerCase()]} ${formatHindiYear(Number(dateMatch[4]))}`;
     }
     return hindiDays[normalizedDateText] ?? normalizedValue;
   }
@@ -4974,25 +5191,18 @@ function formatBookingTimePhraseForPrompt(value: string, prompts: ConversationPr
   const normalizedValue = String(value || "selected time").trim();
   if (!normalizedValue) return "selected time";
 
-  if (isGujaratiPromptSet(prompts)) {
-    return `${normalizedValue} વાગ્યે`;
-  }
-
-  if (hasDevanagariText(`${prompts.askDate} ${prompts.askTime} ${prompts.bookingFinalSummary}`)) {
-    return `${normalizedValue} बजे`;
-  }
-
-  if (isEnglishPromptSet(prompts)) {
-    return `at ${normalizedValue}`;
-  }
-
-  return `${normalizedValue} par`;
+  return formatSpokenTimeFromLabel(normalizedValue, prompts);
 }
 
 function formatAvailabilityReplyForPrompt(reply: string, prompts: ConversationPrompts): string {
-  return reply.replace(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+\d{1,2}\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4})?\b/gi, (day) =>
-    formatBookingDateForPrompt(day.toLowerCase(), prompts)
-  );
+  return reply
+    .replace(/\b(\d{4})[-/\s](\d{2})[-/\s](\d{2})\b/g, (_, year: string, month: string, day: string) =>
+      formatBookingDateForPrompt(`${year}-${month}-${day}`, prompts)
+    )
+    .replace(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+\d{1,2}\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4})?\b/gi, (day) =>
+      formatBookingDateForPrompt(day.toLowerCase(), prompts)
+    )
+    .replace(/\b(\d{1,2}(?::|\s)\d{2}\s*(?:am|pm))\b/gi, (time) => formatSpokenTimeFromLabel(time, prompts));
 }
 
 function stripDoctorTitle(name: string): string {
@@ -6029,21 +6239,34 @@ function sanitizeSpeechPunctuation(reply: string): string {
 function normalizeReplyForSpeech(reply: string, prompts: ConversationPrompts): string {
   let nextReply = formatAvailabilityReplyForPrompt(reply, prompts);
 
-  nextReply = nextReply
-    .replace(/\bReference last 4\b/gi, "Reference last 4")
-    .replace(/\bSMS notification\b/gi, isGujaratiPromptSet(prompts) ? "SMS સૂચના" : "SMS notification")
-    .replace(/\bappointment booked\b/gi, isGujaratiPromptSet(prompts) ? "appointment booked" : "appointment booked");
-
   if (isGujaratiPromptSet(prompts)) {
     nextReply = nextReply
+      .replace(/\bDoctor\b/gi, "ડોક્ટર")
+      .replace(/\bdepartment\b/gi, "વિભાગ")
+      .replace(/\bbooking\b/gi, "અપોઇન્ટમેન્ટ")
+      .replace(/\bcontact number\b/gi, "સંપર્ક નંબર")
+      .replace(/\bappointment booked\b/gi, "અપોઇન્ટમેન્ટ નક્કી થઈ ગઈ છે")
+      .replace(/\bReference last 4\b/gi, "રેફરન્સના છેલ્લાં 4")
+      .replace(/\bSMS notification\b/gi, "SMS સૂચના")
       .replace(/\bpar\b/gi, "પર")
       .replace(/\bko\b/gi, "ને")
       .replace(/\bya\b/gi, "અથવા");
   } else if (hasDevanagariText(`${prompts.askDate} ${prompts.askTime} ${prompts.bookingFinalSummary}`)) {
     nextReply = nextReply
+      .replace(/\bDoctor\b/gi, "डॉक्टर")
+      .replace(/\bdepartment\b/gi, "विभाग")
+      .replace(/\bbooking\b/gi, "अपॉइंटमेंट")
+      .replace(/\bcontact number\b/gi, "संपर्क नंबर")
+      .replace(/\bappointment booked\b/gi, "अपॉइंटमेंट बुक हो गई है")
+      .replace(/\bReference last 4\b/gi, "रेफरेंस के आख़िरी 4")
+      .replace(/\bSMS notification\b/gi, "SMS सूचना")
       .replace(/\bpar\b/gi, "पर")
       .replace(/\bko\b/gi, "को")
       .replace(/\bya\b/gi, "या");
+  } else {
+    nextReply = nextReply
+      .replace(/\bSMS notification\b/gi, "SMS notification")
+      .replace(/\bReference last 4\b/gi, "Reference last 4");
   }
 
   nextReply = sanitizeSpeechPunctuation(nextReply);
@@ -6076,20 +6299,20 @@ function resetSilenceMemory(session: DemoSessionRecord): DemoSessionRecord {
 }
 
 function slotChoiceText(slots: string[] | undefined, prompts?: ConversationPrompts): string {
-  const usable = (slots ?? []).slice(0, 2);
+  const usable = (slots ?? []).slice(0, 2).map((slot) => prompts ? formatSpokenTimeFromLabel(slot, prompts) : slot);
   const joiner = prompts && isGujaratiPromptSet(prompts)
-    ? "àª…àª¥àªµàª¾"
+    ? "અથવા"
     : prompts && hasDevanagariText(`${prompts.askTime} ${prompts.rescheduleAskSlot}`)
-      ? "à¤¯à¤¾"
+      ? "या"
       : prompts && isEnglishPromptSet(prompts)
         ? "or"
         : "ya";
   const fallback = prompts && isEnglishPromptSet(prompts)
     ? "morning or afternoon"
     : prompts && isGujaratiPromptSet(prompts)
-      ? "morning àª…àª¥àªµàª¾ afternoon"
+      ? "સવારે અથવા બપોરે"
       : prompts && hasDevanagariText(`${prompts.askTime} ${prompts.rescheduleAskSlot}`)
-        ? "morning à¤¯à¤¾ afternoon"
+        ? "सुबह या दोपहर"
         : "morning ya afternoon";
   return usable.length > 0 ? usable.join(` ${joiner} `) : fallback;
 }
@@ -6982,7 +7205,7 @@ export class BotService {
       action = "transfer_call";
       latestIntent = "human_escalation";
       stage = "fallback";
-      session = updateSession(session, { callStatus: "completed" });
+      session = updateSession(session, { callStatus: "transferred" });
     } else if (
       (cancelIntentRequested || cancelContinuationRequested)
       && !["confirming", "reschedule_confirming", "cancel_confirming"].includes(session.bookingStage)
@@ -7017,11 +7240,17 @@ export class BotService {
           cancel_lookup_date: cancelSelection.requestedDate ?? session.cancel_lookup_date ?? null,
           cancel_lookup_time: cancelSelection.requestedTime ?? session.cancel_lookup_time ?? null
         });
-        reply = buildNoActiveAppointmentReply(cancelSelection, prompts.cancelNoActiveBooking, prompts);
-        stage = cancelSelection.requestedPatientName || cancelSelection.requestedDoctor || cancelSelection.requestedDate || cancelSelection.requestedTime
-          ? "cancel_confirming"
-          : "waiting_for_intent";
-        action = "cancel_no_active_booking";
+        const hasCancelDetails = Boolean(
+          cancelSelection.requestedPatientName
+          || cancelSelection.requestedDoctor
+          || cancelSelection.requestedDate
+          || cancelSelection.requestedTime
+        );
+        reply = hasCancelDetails
+          ? buildNoActiveAppointmentReply(cancelSelection, prompts.cancelNoActiveBooking, prompts)
+          : prompts.cancelAskDetails;
+        stage = "cancel_confirming";
+        action = hasCancelDetails ? "cancel_no_active_booking" : "ask_cancel_details";
       }
 
       latestIntent = "cancel_appointment";
@@ -7927,16 +8156,16 @@ export class BotService {
           if (!confirmsCancellation) {
             reply = existingBooking
               ? buildCancelConfirmation(existingBooking, runtimeDoctors, prompts)
-              : prompts.cancelMissingBooking;
-            stage = existingBooking ? "cancel_confirming" : "waiting_for_intent";
-            action = existingBooking ? "reprompt_cancel_confirmation" : "cancel_missing_booking";
+              : prompts.cancelAskDetails;
+            stage = "cancel_confirming";
+            action = existingBooking ? "reprompt_cancel_confirmation" : "ask_cancel_details";
             break;
           }
 
           if (!appointmentId) {
-            reply = prompts.cancelMissingBooking;
-            stage = "waiting_for_intent";
-            action = "cancel_missing_booking";
+            reply = prompts.cancelAskDetails;
+            stage = "cancel_confirming";
+            action = "ask_cancel_details";
             session = updateSession(session, {
               cancel_lookup_doctor: null,
               cancel_lookup_date: null,
@@ -8008,7 +8237,7 @@ export class BotService {
         action = "fallback_transfer";
         latestIntent = "human_escalation";
         stage = "fallback";
-        session = updateSession(session, { callStatus: "completed" });
+        session = updateSession(session, { callStatus: "transferred" });
       } else if (policy === "end_call") {
         reply = prompts.goodbyeMessage;
         action = "fallback_end_call";
@@ -8202,9 +8431,12 @@ export class BotService {
       action = "emergency_escalation";
       stage = "fallback";
     } else if (resolvedIntent === "human_escalation") {
-      reply = `I will transfer you to reception at ${clinicSettings?.transferNumber ?? "the configured clinic number"}.`;
+      const transferPrefix = prompts.transferMessage.replace("the configured clinic number", "").trim();
+      reply = `${transferPrefix} ${clinicSettings?.transferNumber ?? "the configured clinic number"}.`.trim();
       action = "transfer_call";
       stage = "fallback";
+      latestIntent = "human_escalation";
+      session = updateSession(session, { callStatus: "transferred" });
     } else if (resolvedIntent === "ask_clinic_info") {
       reply = `The consultation fee is ${clinicSettings?.consultationFee ?? "configured in admin"} and clinic timings are ${clinicSettings?.clinicTimings ?? "available at the clinic desk"}.`;
       action = "share_clinic_info";

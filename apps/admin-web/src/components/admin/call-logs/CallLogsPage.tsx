@@ -232,7 +232,7 @@ export function CallLogsPage() {
   if (error)   return <div className="text-red-500 text-sm p-4">{error}</div>;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <Card>
         <CardHeader
           title="Call Logs"
@@ -259,7 +259,7 @@ export function CallLogsPage() {
         />
 
         {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-5">
+        <div className="mb-6 flex flex-col gap-3 rounded-[24px] border border-white/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.88),rgba(248,250,252,0.82))] p-4 shadow-[0_16px_36px_rgba(148,163,184,0.10)] sm:flex-row dark:border-slate-700/80 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(17,24,39,0.86))]">
           <div className="relative flex-1">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
@@ -270,14 +270,14 @@ export function CallLogsPage() {
               placeholder="Search by caller, session, doctor, outcome..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full rounded-xl border border-slate-200 bg-white/80 py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800/90"
             />
           </div>
           <select
             id="status-filter"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800/90"
           >
             <option value="all">All Outcomes</option>
             <option value="book">Booked</option>
@@ -289,7 +289,7 @@ export function CallLogsPage() {
             type="date"
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
-            className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800/90"
           />
           {dateFilter && (
             <Button variant="secondary" size="sm" onClick={() => setDateFilter("")}>
@@ -366,7 +366,7 @@ export function CallLogsPage() {
           emptyMessage="No calls match your filters."
         />
         {filtered.length > 0 && (
-          <p className="text-xs text-slate-400 mt-3 text-right">Click any row to view transcript</p>
+          <p className="mt-3 text-right text-xs font-medium text-slate-400">Click any row to view transcript</p>
         )}
       </Card>
 
@@ -374,7 +374,7 @@ export function CallLogsPage() {
       <Modal
         open={!!selected}
         onClose={() => setSelected(null)}
-        title={`Transcript — ${selected?.callerNumber ?? ""}`}
+        title={`Transcript - ${selected?.callerNumber ?? ""}`}
         size="lg"
       >
         {txLoading ? (
@@ -459,9 +459,9 @@ export function CallLogsPage() {
               <button
                 type="button"
                 onClick={() => setSelected(null)}
-                className="h-9 px-3 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+                className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
               >
-                X Close Transcript
+                Close Transcript
               </button>
             </div>
           </div>

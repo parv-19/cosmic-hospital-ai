@@ -1,12 +1,12 @@
 /* THEMED: global SaaS theme foundation and light/dark compatibility layer. */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', sans-serif;
+  font-family: 'Manrope', 'Segoe UI', 'Helvetica Neue', sans-serif;
   color-scheme: light;
 }
 
@@ -22,12 +22,17 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #f8fafc;
+  background:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.10), transparent 28%),
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.07), transparent 24%),
+    linear-gradient(180deg, #f7f9fc 0%, #eef3fb 100%);
   color: #0f172a;
 }
 
 .dark body {
-  background: #0f172a;
+  background:
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.10), transparent 22%),
+    linear-gradient(180deg, #0b1220 0%, #0f172a 55%, #111827 100%);
   color: #f8fafc;
 }
 
@@ -99,12 +104,12 @@ button, input, select, textarea {
 }
 
 .card-lift:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.10);
+  transform: translateY(-3px);
+  box-shadow: 0 24px 54px rgba(15, 23, 42, 0.12);
 }
 
 .dark .card-lift:hover {
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 24px 54px rgba(0, 0, 0, 0.28);
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }

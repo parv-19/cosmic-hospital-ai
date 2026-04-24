@@ -109,12 +109,12 @@ export function BehaviourPage() {
     <div className="space-y-6">
       {/* Doctor selector */}
       {records.length > 1 && (
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex flex-wrap gap-2">
           {records.map((r) => (
             <button
               key={r.doctorId}
               onClick={() => applyRecord(r)}
-              className={`text-sm px-4 py-2 rounded-lg border transition-all ${selected?.doctorId === r.doctorId ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"}`}
+              className={`rounded-2xl border px-4 py-2 text-sm font-semibold transition-all ${selected?.doctorId === r.doctorId ? "border-sky-400/40 bg-[linear-gradient(135deg,#38bdf8_0%,#2563eb_100%)] text-white shadow-[0_14px_30px_rgba(37,99,235,0.22)]" : "border-white/90 bg-white/80 text-slate-600 shadow-[0_10px_24px_rgba(148,163,184,0.10)] hover:border-sky-200 hover:text-sky-700 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:shadow-none dark:hover:border-sky-500/40 dark:hover:bg-slate-800 dark:hover:text-sky-200"}`}
             >
               {r.doctorName || r.doctorId}
             </button>
@@ -127,10 +127,10 @@ export function BehaviourPage() {
         <Card>
           <CardHeader title="Booking Configuration" subtitle="Control the appointment booking behaviour" />
           <div className="space-y-4">
-            <div className={`flex items-center justify-between p-4 rounded-xl border-2 transition-all ${bookingEnabled ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
+            <div className={`flex items-center justify-between rounded-[22px] border p-4 transition-all ${bookingEnabled ? "border-emerald-200 bg-[linear-gradient(180deg,rgba(236,253,245,0.96),rgba(220,252,231,0.85))] dark:border-emerald-500/20 dark:bg-[linear-gradient(180deg,rgba(17,94,89,0.28),rgba(16,78,72,0.18))]" : "border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(241,245,249,0.88))] dark:border-slate-700 dark:bg-[linear-gradient(180deg,rgba(30,41,59,0.9),rgba(17,24,39,0.86))]"}`}>
               <div>
-                <p className="text-sm font-semibold text-slate-800">Appointment Booking</p>
-                <p className="text-xs text-slate-500 mt-0.5">Allow the AI to book appointments for callers</p>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Appointment Booking</p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Allow the AI to book appointments for callers</p>
               </div>
               <button
                 id="booking-toggle"
@@ -292,10 +292,10 @@ export function BehaviourPage() {
 
       {/* Save bar */}
       {isAdmin && (
-        <div className="sticky bottom-4 flex items-center justify-between bg-white border border-slate-200 rounded-xl shadow-card px-5 py-3">
+        <div className="sticky bottom-4 flex items-center justify-between rounded-[24px] border border-white/90 bg-white/80 px-5 py-3 shadow-[0_18px_42px_rgba(148,163,184,0.14)] backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
           <div>
             {error && <p className="text-xs text-red-500">{error}</p>}
-            {saved && <p className="text-xs text-emerald-600 font-medium">✓ Behaviour settings saved</p>}
+            {saved && <p className="text-xs font-medium text-emerald-600">Behaviour settings saved</p>}
           </div>
           <Button id="save-behaviour" variant="primary" loading={saving} onClick={handleSave}>
             Save Changes

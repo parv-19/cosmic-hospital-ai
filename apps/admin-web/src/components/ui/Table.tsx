@@ -1,6 +1,7 @@
 // THEMED: dark-mode table primitive with the existing generic API.
 import React from "react";
 import { cn } from "../../lib/utils";
+import { useTheme } from "../../context/ThemeContext";
 
 interface Column<T> {
   key: string;
@@ -24,15 +25,36 @@ export function Table<T extends Record<string, unknown>>({
   emptyMessage = "No records found.",
   loading = false,
 }: TableProps<T>) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-300 bg-slate-50 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div
+      className={cn(
+        "overflow-x-auto rounded-[24px] backdrop-blur-sm",
+        isDark
+          ? "border border-slate-700 bg-[#0f172a] shadow-[inset_0_1px_0_rgba(148,163,184,0.06)]"
+          : "border border-slate-200/80 bg-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
+      )}
+    >
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-300 bg-slate-100 dark:border-slate-700 dark:bg-slate-950">
+          <tr
+            className={cn(
+              "border-b",
+              isDark
+                ? "border-slate-700 bg-[#162236]"
+                : "border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.95),rgba(241,245,249,0.9))]"
+            )}
+          >
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={cn("px-4 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300", col.className)}
+                className={cn(
+                  "px-4 py-3.5 text-left text-[11px] font-extrabold uppercase tracking-[0.18em]",
+                  isDark ? "text-slate-300" : "text-slate-500",
+                  col.className
+                )}
               >
                 {col.header}
               </th>
@@ -64,13 +86,22 @@ export function Table<T extends Record<string, unknown>>({
                 key={i}
                 onClick={() => onRowClick?.(row)}
                 className={cn(
-                  "border-b border-slate-200 transition-colors duration-200 last:border-0 hover:bg-sky-50 dark:border-slate-700 dark:hover:bg-slate-700/70",
-                  i % 2 === 0 ? "bg-white dark:bg-slate-800" : "bg-slate-100/70 dark:bg-slate-900/65",
+                  "border-b transition-colors duration-200 last:border-0",
+                  isDark
+                    ? i % 2 === 0
+                      ? "border-slate-700 bg-[#0f172a] hover:bg-slate-800/80"
+                      : "border-slate-700 bg-[#111827] hover:bg-slate-800/80"
+                    : i % 2 === 0
+                      ? "border-slate-200/90 bg-white/70 hover:bg-sky-50/70"
+                      : "border-slate-200/90 bg-slate-50/85 hover:bg-sky-50/70",
                   onRowClick && "cursor-pointer"
                 )}
               >
                 {columns.map((col) => (
-                  <td key={col.key} className={cn("px-4 py-3 text-slate-800 dark:text-slate-200", col.className)}>
+                  <td
+                    key={col.key}
+                    className={cn("px-4 py-3.5", isDark ? "text-slate-200" : "text-slate-800", col.className)}
+                  >
                     {col.render ? col.render(row) : String(row[col.key] ?? "-")}
                   </td>
                 ))}

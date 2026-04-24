@@ -39,7 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "dashboard", label: "Dashboard", roles: ["ADMIN", "DOCTOR", "READ_ONLY"], icon: <LayoutDashboard size={18} /> },
   { id: "analytics", label: "Analytics", roles: ["ADMIN", "READ_ONLY"], icon: <BarChart3 size={18} /> },
   { id: "call-logs", label: "Call Logs", roles: ["ADMIN", "DOCTOR", "READ_ONLY"], icon: <PhoneCall size={18} /> },
-  { id: "directory", label: "Directory", roles: ["ADMIN", "DOCTOR", "READ_ONLY"], icon: <Users size={18} /> },
+  { id: "directory", label: "Doctors", roles: ["ADMIN", "DOCTOR", "READ_ONLY"], icon: <Users size={18} /> },
   { id: "settings", label: "Settings", roles: ["ADMIN", "DOCTOR"], icon: <Settings size={18} /> },
   { id: "prompts", label: "Prompts", roles: ["ADMIN", "DOCTOR"], icon: <MessageSquareText size={18} /> },
   { id: "behaviour", label: "Behaviour", roles: ["ADMIN"], icon: <SlidersHorizontal size={18} /> },
@@ -75,17 +75,17 @@ export function Sidebar({ current, onChange, mobileOpen = false, onCloseMobile }
       )}
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-full w-[260px] flex-col border-r border-slate-200 bg-white transition-transform duration-200 dark:border-slate-800 dark:bg-slate-900",
+          "fixed left-0 top-0 z-40 flex h-full w-[272px] flex-col border-r border-white/60 bg-[linear-gradient(180deg,#fbfdff_0%,#f3f7ff_100%)] shadow-[0_20px_70px_rgba(148,163,184,0.18)] transition-transform duration-200 dark:border-slate-800 dark:bg-[linear-gradient(180deg,#0f172a_0%,#111c34_100%)] dark:shadow-none",
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
-        <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-5 dark:border-slate-800">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-500 shadow-card-md">
+        <div className="flex items-center gap-3 border-b border-slate-200/70 px-5 py-5 dark:border-slate-800">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#38bdf8_0%,#2563eb_100%)] shadow-[0_14px_32px_rgba(37,99,235,0.28)]">
             <Bot size={20} className="text-white" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold leading-tight text-slate-900 dark:text-white">AI Receptionist</p>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="truncate text-sm font-extrabold leading-tight text-slate-950 dark:text-white">AI Receptionist</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-600/80 dark:text-sky-300/70">
               {role === "ADMIN" ? "Admin Console" : role === "DOCTOR" ? "Doctor Portal" : "Read Only"}
             </p>
           </div>
@@ -99,8 +99,8 @@ export function Sidebar({ current, onChange, mobileOpen = false, onCloseMobile }
         </div>
 
         <nav className="flex-1 overflow-y-auto px-3 py-4">
-          <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Navigation</p>
-          <div className="space-y-1">
+          <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Navigation</p>
+          <div className="space-y-1.5">
             {visible.map((item) => {
               const active = current === item.id;
               return (
@@ -109,13 +109,13 @@ export function Sidebar({ current, onChange, mobileOpen = false, onCloseMobile }
                   id={`nav-${item.id}`}
                   onClick={() => selectPage(item.id)}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-lg border-l-2 px-3 py-2.5 text-left text-sm font-medium transition-colors duration-200",
+                    "group flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left text-sm font-medium transition-all duration-200",
                     active
-                      ? "border-sky-500 bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300"
-                      : "border-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+                      ? "border-sky-200 bg-[linear-gradient(135deg,rgba(14,165,233,0.12),rgba(59,130,246,0.06))] text-sky-700 shadow-[0_10px_24px_rgba(14,165,233,0.10)] dark:border-sky-500/20 dark:bg-sky-900/20 dark:text-sky-300"
+                      : "border-transparent text-slate-500 hover:border-white hover:bg-white/80 hover:text-slate-900 hover:shadow-[0_10px_24px_rgba(148,163,184,0.12)] dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-white"
                   )}
                 >
-                  {item.icon}
+                  <span className={cn("transition-transform duration-200", active ? "scale-105" : "group-hover:scale-105")}>{item.icon}</span>
                   <span className="flex-1">{item.label}</span>
                   {item.id === "call-logs" && <CalendarClock size={13} className="opacity-50" />}
                 </button>
@@ -125,9 +125,9 @@ export function Sidebar({ current, onChange, mobileOpen = false, onCloseMobile }
         </nav>
 
         <div className="border-t border-slate-100 p-4 dark:border-slate-800">
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50">
+          <div className="rounded-[24px] border border-white/80 bg-white/75 p-3 shadow-[0_14px_32px_rgba(148,163,184,0.14)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/50 dark:shadow-none">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xs font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#e0f2fe_0%,#dbeafe_100%)] text-xs font-bold text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
                 {(user?.name ?? "U")[0].toUpperCase()}
               </div>
               <div className="min-w-0 flex-1">

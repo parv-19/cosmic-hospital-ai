@@ -278,12 +278,12 @@ export function AIConfigPage() {
     <div className="space-y-6">
       {/* Doctor selector */}
       {records.length > 1 && (
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex flex-wrap gap-2">
           {records.map((r) => (
             <button
               key={r.doctorId}
               onClick={() => applyRecord(r)}
-              className={`text-sm px-4 py-2 rounded-lg border transition-all ${selected?.doctorId === r.doctorId ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"}`}
+              className={`rounded-2xl border px-4 py-2 text-sm font-semibold transition-all ${selected?.doctorId === r.doctorId ? "border-sky-400/40 bg-[linear-gradient(135deg,#38bdf8_0%,#2563eb_100%)] text-white shadow-[0_14px_30px_rgba(37,99,235,0.22)]" : "border-white/90 bg-white/80 text-slate-600 shadow-[0_10px_24px_rgba(148,163,184,0.10)] hover:border-sky-200 hover:text-sky-700 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:border-sky-500/40 dark:hover:text-sky-300"}`}
             >
               {r.doctorName || r.doctorId}
             </button>
@@ -345,10 +345,10 @@ export function AIConfigPage() {
       </div>
 
       {isAdmin && (
-        <div className="sticky bottom-4 flex items-center justify-between bg-white border border-slate-200 rounded-xl shadow-card px-5 py-3">
+        <div className="sticky bottom-4 flex items-center justify-between rounded-[24px] border border-white/90 bg-white/80 px-5 py-3 shadow-[0_18px_42px_rgba(148,163,184,0.14)] backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
           <div>
             {error && <p className="text-xs text-red-500">{error}</p>}
-            {saved && <p className="text-xs text-emerald-600 font-medium">AI Config updated</p>}
+            {saved && <p className="text-xs font-medium text-emerald-600">AI config updated</p>}
           </div>
           <Button variant="primary" loading={saving} onClick={handleSave}>
             Save Pipeline
@@ -400,7 +400,7 @@ function ConfigPanel({ title, service, config, setConfig, options, modelOptions,
       />
       <div className="space-y-4">
         {healthMessage && (
-          <p className={`text-xs ${String(healthMessage).includes("passed") ? "text-emerald-600" : "text-amber-600"}`}>
+          <p className={`rounded-xl border px-3 py-2 text-xs font-medium ${String(healthMessage).includes("passed") ? "border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300" : "border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"}`}>
             {healthMessage}
           </p>
         )}
