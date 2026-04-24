@@ -125,6 +125,7 @@ export type DemoSessionRecord = {
   patientName: string | null;
   patientType: string | null;
   contactNumber: string | null;
+  pendingContactNumber?: string | null;
   partialMobileDigits?: string | null;
   bookingContactConfirmed?: boolean;
   bookingContactConfirmationPending?: boolean;

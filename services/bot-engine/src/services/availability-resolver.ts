@@ -94,6 +94,13 @@ function resolvePrompts(prompts?: AvailabilityPromptTemplates | null): Required<
 function normalizeDay(value: string | null | undefined): string | null {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (!normalized) return null;
+  const isoDate = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDate) {
+    const parsed = new Date(Number(isoDate[1]), Number(isoDate[2]) - 1, Number(isoDate[3]));
+    if (!Number.isNaN(parsed.getTime())) {
+      return JS_DAY_ORDER[parsed.getDay()] ?? null;
+    }
+  }
   return DAY_ORDER.find((day) => normalized.includes(day)) ?? null;
 }
 
@@ -101,6 +108,29 @@ function formatCalendarDate(date: Date): string {
   const weekday = JS_DAY_ORDER[date.getDay()];
   const month = MONTHS[date.getMonth()].names[0];
   return `${weekday} ${date.getDate()} ${month} ${date.getFullYear()}`;
+}
+
+function sortSlotsByProximity(slots: string[], requestedTime: string | null | undefined): string[] {
+  const requestedMinutes = parseMinutes(requestedTime);
+  if (requestedMinutes === null) {
+    return slots;
+  }
+
+  return [...slots].sort((left, right) => {
+    const leftMinutes = parseMinutes(left);
+    const rightMinutes = parseMinutes(right);
+    if (leftMinutes === null && rightMinutes === null) return 0;
+    if (leftMinutes === null) return 1;
+    if (rightMinutes === null) return -1;
+
+    const leftDistance = Math.abs(leftMinutes - requestedMinutes);
+    const rightDistance = Math.abs(rightMinutes - requestedMinutes);
+    if (leftDistance !== rightDistance) {
+      return leftDistance - rightDistance;
+    }
+
+    return leftMinutes - rightMinutes;
+  });
 }
 
 function dateKeyFromText(value: string | null | undefined): string | null {
@@ -113,6 +143,17 @@ function dateKeyFromText(value: string | null | undefined): string | null {
     .trim();
 
   if (!normalized) return null;
+
+  const isoDate = normalized.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (isoDate) {
+    const year = Number(isoDate[1]);
+    const month = Number(isoDate[2]) - 1;
+    const day = Number(isoDate[3]);
+    const parsed = new Date(year, month, day);
+    if (parsed.getFullYear() === year && parsed.getMonth() === month && parsed.getDate() === day) {
+      return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+    }
+  }
 
   const monthMatch = MONTHS
     .flatMap((entry) => entry.names.map((name) => ({ month: entry.month, name })))
@@ -439,7 +480,7 @@ export function resolveAvailability(input: {
   }
 
   if (requestedTime) {
-    const alternative = freeSlots.slice(0, 2);
+    const alternative = sortSlotsByProximity(freeSlots, requestedTime).slice(0, 2);
     if (alternative.length > 0) {
       const nextPreferred = isBucketPreference(requestedTime)
         ? nextAvailableDay(doctor, requestedDay, input.appointments, durationMinutes, requestedTime, requestedDateText)
