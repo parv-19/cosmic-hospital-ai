@@ -325,18 +325,6 @@ export function CallLogsPage() {
               render: (r) => <span className="text-slate-500 text-xs">{(r.selectedSpecialization as string) || "—"}</span>,
             },
             {
-              key: "qualitySummary", header: "Quality",
-              render: (r) => {
-                const summary = (r as unknown as CallRecord).qualitySummary;
-                const scored = isQualityScored(summary);
-                return (
-                  <Badge variant={scored ? qualityVariant(summary?.severity) : "neutral"}>
-                    {scored ? `${summary?.score ?? 0}/100` : "Not scored"}
-                  </Badge>
-                );
-              },
-            },
-            {
               key: "durationSeconds", header: "Duration",
               render: (r) => <span className="text-slate-600 text-sm">{fmtDuration(r.durationSeconds as number)}</span>,
             },
@@ -385,17 +373,13 @@ export function CallLogsPage() {
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/60">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Turn Analysis</h3>
-                  <Badge
-                    variant={
-                      isQualityScored(selected.qualitySummary)
-                        ? ((selected.qualitySummary?.score ?? 100) < 85 || selected.analysisHistory?.some((item) => item.needsReview) ? "warning" : "success")
-                        : "neutral"
-                    }
-                  >
-                    {isQualityScored(selected.qualitySummary)
-                      ? ((selected.qualitySummary?.score ?? 100) < 85 || selected.analysisHistory?.some((item) => item.needsReview) ? "Needs review" : "OK")
-                      : "Not scored"}
-                  </Badge>
+                  {isQualityScored(selected.qualitySummary) ? (
+                    <Badge
+                      variant={(selected.qualitySummary?.score ?? 100) < 85 || selected.analysisHistory?.some((item) => item.needsReview) ? "warning" : "success"}
+                    >
+                      {(selected.qualitySummary?.score ?? 100) < 85 || selected.analysisHistory?.some((item) => item.needsReview) ? "Needs review" : "OK"}
+                    </Badge>
+                  ) : null}
                 </div>
                 <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-950/30">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Call Summary</p>
@@ -404,10 +388,7 @@ export function CallLogsPage() {
                   </p>
                 </div>
                 <div className="mt-3 space-y-3 max-h-80 overflow-y-auto pr-1">
-                  {(selected.analysisHistory ?? []).length === 0 ? (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">No analysis summary available for this call.</p>
-                  ) : (
-                    (selected.analysisHistory ?? []).map((turn) => (
+                  {(selected.analysisHistory ?? []).map((turn) => (
                       <div
                         key={turn.turn}
                         className={`rounded-xl border p-3 ${turn.needsReview ? "border-amber-300 bg-amber-50/80 dark:border-amber-500/30 dark:bg-amber-500/10" : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950/40"}`}
@@ -433,8 +414,7 @@ export function CallLogsPage() {
                           <Badge variant={qualityVariant(turn.severity)}>{turn.score}/100</Badge>
                         </div>
                       </div>
-                    ))
-                  )}
+                    ))}
                 </div>
               </div>
             )}

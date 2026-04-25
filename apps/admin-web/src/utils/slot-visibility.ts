@@ -77,8 +77,11 @@ export function getSlotSummary(
   }
 
   const bookedTimes = new Set(bookedSlots.map((slot) => slot.time.toLowerCase()));
-  const availableSlots = generateSlots(availability.start, availability.end, slotDurationMinutes)
-    .filter((slot) => !bookedTimes.has(slot.toLowerCase()));
+  const availableSlots = filterPastSlotsForSelectedDate(
+    generateSlots(availability.start, availability.end, slotDurationMinutes)
+      .filter((slot) => !bookedTimes.has(slot.toLowerCase())),
+    selectedDate
+  );
 
   return { day: normalizedDay, availableSlots, bookedSlots };
 }
@@ -151,6 +154,22 @@ function parseDateKey(value: string) {
 function appointmentMatchesDoctor(appointment: AppointmentRecord, doctor: DoctorRecord) {
   if (appointment.doctorId && appointment.doctorId === doctor.doctorId) return true;
   return (appointment.doctorName ?? "").toLowerCase() === doctor.name.toLowerCase();
+}
+
+function formatDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function filterPastSlotsForSelectedDate(slots: string[], selectedDate?: string, now = new Date()) {
+  if (!selectedDate || selectedDate !== formatDateKey(now)) {
+    return slots;
+  }
+
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  return slots.filter((slot) => {
+    const slotMinutes = parseTimeToMinutes(slot);
+    return slotMinutes !== null && slotMinutes > currentMinutes;
+  });
 }
 
 function generateSlots(start: string, end: string, durationMinutes: number) {

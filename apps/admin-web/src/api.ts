@@ -183,6 +183,7 @@ export type SettingsRecord = {
     languageNormalization?: boolean;
     smartClarification?: boolean;
     availabilityFirst?: boolean;
+    llmFallbackEnabled?: boolean;
     confidenceThreshold?: number;
   } | null;
   costDisplay?: {

@@ -221,6 +221,10 @@ function formatSlot(minutes: number): string {
   return `${hours12}:${String(mins).padStart(2, "0")} ${suffix}`;
 }
 
+function formatDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function timeBucket(slot: string): "morning" | "afternoon" | "evening" | null {
   const minutes = parseMinutes(slot);
   if (minutes === null) return null;
@@ -404,6 +408,18 @@ function isBucketPreference(value: string | null | undefined): boolean {
   return ["morning", "afternoon", "evening"].includes(String(value ?? "").toLowerCase());
 }
 
+function filterPastSlotsForSameDay(slots: string[], requestedDateKey: string | null | undefined, now = new Date()): string[] {
+  if (!requestedDateKey || requestedDateKey !== formatDateKey(now)) {
+    return slots;
+  }
+
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  return slots.filter((slot) => {
+    const slotMinutes = parseMinutes(slot);
+    return slotMinutes !== null && slotMinutes > currentMinutes;
+  });
+}
+
 export function resolveAvailability(input: {
   doctor: AvailabilityRuntimeDoctor | null;
   requestedDay: string | null | undefined;
@@ -457,7 +473,10 @@ export function resolveAvailability(input: {
 
   const slots = generateSlots(dayConfig, durationMinutes);
   const occupied = occupiedSlotsForDay(doctor, requestedDay, input.appointments, slots, requestedDateKey);
-  const freeSlots = slots.filter((slot) => !occupied.has(slot));
+  const freeSlots = filterPastSlotsForSameDay(
+    slots.filter((slot) => !occupied.has(slot)),
+    requestedDateKey
+  );
   const matchingSlots = filterSlotsByPreference(freeSlots, requestedTime);
 
   if (matchingSlots.length > 0) {
