@@ -98,6 +98,7 @@ type IntelligenceSettings = {
   languageNormalization?: boolean;
   smartClarification?: boolean;
   availabilityFirst?: boolean;
+  llmFallbackEnabled?: boolean;
   confidenceThreshold?: number;
 };
 
@@ -545,6 +546,7 @@ function resolveIntelligenceSettings(clinicSettings: ClinicSettings | null | und
     languageNormalization: clinicSettings?.intelligenceSettings?.languageNormalization ?? true,
     smartClarification: clinicSettings?.intelligenceSettings?.smartClarification ?? true,
     availabilityFirst: clinicSettings?.intelligenceSettings?.availabilityFirst ?? true,
+    llmFallbackEnabled: clinicSettings?.intelligenceSettings?.llmFallbackEnabled ?? true,
     confidenceThreshold: clinicSettings?.intelligenceSettings?.confidenceThreshold ?? 0.7
   };
 }
@@ -679,6 +681,34 @@ function canUseConfiguredLlmReply(action: string): boolean {
   ]).has(action);
 }
 
+function shouldUseSemanticLlmFallback(action: string, intelligence: Required<IntelligenceSettings>): boolean {
+  return intelligence.llmFallbackEnabled && (action === "demo_fallback" || isFallbackAction(action) || action === "clarify");
+}
+
+function appendLlmUsage(
+  session: DemoSessionRecord,
+  llmConfig: LLMConfig | null | undefined,
+  callerText: string,
+  replyText: string
+): DemoSessionRecord {
+  if (!llmConfig || !llmConfig.primaryProvider || llmConfig.primaryProvider === "mock") {
+    return session;
+  }
+
+  return updateSession(session, {
+    usageLedger: [
+      ...(session.usageLedger ?? []),
+      createUsageLedgerEntry({
+        service: "llm",
+        provider: llmConfig.primaryProvider,
+        model: llmConfig.model,
+        text: `${callerText}\n${replyText}`,
+        quantity: replyText.length
+      })
+    ]
+  });
+}
+
 function isFallbackAction(action: string): boolean {
   return action === "greet_and_prompt" || action === "reset_to_greeting" || action.startsWith("reprompt_");
 }
@@ -798,9 +828,18 @@ function buildConfiguredSystemPrompt(
   const doctorList = runtimeDoctors.map((doctor) => `${doctor.name} (${doctor.specialization})`).join(", ");
 
   return [
-    "You are the configured hospital appointment assistant.",
-    "Reply with one concise spoken response only. Do not include JSON, labels, or analysis.",
-    "Do not invent booking details. Keep the existing booking stage and facts unchanged.",
+    "You are a live hospital receptionist AI for a real clinic or hospital.",
+    "Your job is to sound calm, helpful, short, and professional on a phone call.",
+    "You may reply in Gujarati, Hindi, Hinglish, or English based on the caller's language. Match the caller naturally.",
+    "Reply with one concise spoken response only. Do not include JSON, labels, bullets, or analysis.",
+    "Do not invent booking details. Keep the existing booking stage, slot facts, and collected details unchanged.",
+    "If the rule-based pipeline already produced a good answer, improve only wording and clarity, not the facts.",
+    "If the caller uses a new wording, slang, typo, STT error, or indirect phrase, infer the most likely intent and answer appropriately.",
+    "Supported live-call intents include booking, reschedule, cancel, availability, clinic timings, doctor info, fees, reports, appointment status, human transfer, and emergency routing.",
+    "If something is unclear, ask only one short clarifying question.",
+    "Never give medical diagnosis. For emergencies or dangerous symptoms, prioritize urgent escalation.",
+    "Never promise unavailable slots, prices, reports, or confirmations that are not already known.",
+    "Tone rules: warm, respectful, efficient, receptionist-like, never robotic, never verbose.",
     `Current booking stage: ${session.bookingStage}.`,
     `Selected doctor: ${session.selectedDoctor ?? "not selected"}.`,
     `Selected specialization: ${session.selectedSpecialization ?? "not selected"}.`,
@@ -809,9 +848,10 @@ function buildConfiguredSystemPrompt(
     `Patient name: ${session.patientName ?? "not collected"}.`,
     `Contact number: ${session.contactNumber ?? "not collected"}.`,
     `Available doctors: ${doctorList || "none configured"}.`,
-    "When referring to the clinic's doctors or slots, say \"humare paas\", not \"aap ke paas\".",
+    "When referring to the clinic's doctors or slots, use clinic-side phrasing like 'humare paas' / 'અમારા અહીં' rather than 'aap ke paas'.",
     `Configured prompt instructions: ${prompts.extraInstructions || "none"}.`,
     `Configured spoken language sample: ${prompts.askDate}`,
+    `Latest caller utterance language should follow this sample style when suitable: ${prompts.askTime}`,
     `Use this configured pipeline response as the source of truth: ${baseReply}`
   ].join("\n");
 }
@@ -851,8 +891,11 @@ function buildSemanticFallbackSystemPrompt(
     : "none configured";
 
   return [
-    "You are a hospital appointment assistant fallback classifier.",
-    "Classify the caller's utterance and choose the best next response.",
+    "You are the fallback brain for a live hospital receptionist AI.",
+    "The rule-based flow was not fully confident. Your job is to understand the caller and decide the best safe next response.",
+    "You must handle natural speech, Gujarati/Hindi/Hinglish/English mixing, typos, STT mistakes, short phrases, and unseen wording.",
+    "Infer the most likely intent from messy real phone-call language.",
+    "Your tone must stay receptionist-like: polite, short, warm, confident, and operational.",
     "Return JSON only. No markdown, no explanation, no extra text.",
     "Use this exact schema:",
     `{"intent":"BOOK_APPOINTMENT|RESCHEDULE_APPOINTMENT|CANCEL_APPOINTMENT|CHECK_AVAILABILITY|CLINIC_INFO|DOCTOR_INFO|REPORT_INQUIRY|APPOINTMENT_STATUS|PAYMENT_BILLING|EMERGENCY|HUMAN_ESCALATION|GOODBYE|PRESCRIPTION_RENEWAL|PATIENT_ADMISSION_STATUS|OT_SCHEDULING|TELECONSULT_REQUEST|LANGUAGE_SUPPORT|HEALTH_PACKAGE_BOOKING|REFERRAL_BOOKING|SECOND_OPINION|INSURANCE_INQUIRY|HOME_VISIT_REQUEST|DIGITAL_REPORT_DELIVERY|FOLLOW_UP_CARE|UNKNOWN","reply_mode":"prompt|freeform","prompt_key":"askSpecialization|askDoctorPreference|askDate|askTime|askPatientName|askMobile|askPatientType|confirmRememberedDoctor|confirmRememberedDay|callerNumberConfirmation|callerReuseConfirmation|silenceRetryWithSlots|silenceRetryDate|silenceRetryDoctor|silenceRetryGeneric|recoverySpecialization|recoveryTimeWithSlots|recoveryTimeGeneric|recoveryDateWithMemory|recoveryDateGeneric|recoveryDoctorWithMemory|recoveryPatientName|recoveryMobile|recoveryConfirmation|availableDoctors|doctorDisambiguation|partialMobilePrompt|none","reply":"string","language":"en|hi|hinglish|gu"}`,
@@ -868,9 +911,19 @@ function buildSemanticFallbackSystemPrompt(
     `Caller utterance: ${transcript}`,
     "Priority order:",
     "1. If one of the existing prompt-backed replies fits, return reply_mode prompt and choose the closest prompt_key.",
-    "2. If no prompt-backed reply fits, return reply_mode freeform and write one short spoken reply in the user's language.",
-    "3. Never invent booking details or medical advice.",
+    "2. If the caller used a new wording but intent is still clear, return the correct intent and use either the nearest prompt or a short freeform reply.",
+    "3. If the caller is asking about booking flow progress, ask only the next most useful question.",
+    "4. If the caller mentions emergency, chest pain, breathing trouble, severe bleeding, unconsciousness, or similarly dangerous symptoms, prioritize EMERGENCY.",
+    "5. If the caller wants a human, staff, operator, reception, or transfer, prioritize HUMAN_ESCALATION.",
+    "6. Never invent booking details, doctor availability, reports, fees, medical advice, or confirmations.",
+    "7. If unclear, ask one short clarifying question in the caller's language.",
     `Existing prompts: specialization="${prompts.askSpecialization}", doctorPreference="${prompts.askDoctorPreference}", date="${prompts.askDate}", time="${prompts.askTime}", patientName="${prompts.askPatientName}", mobile="${prompts.askMobile}", patientType="${prompts.askPatientType}", confirm="${prompts.confirmPrefix}", recovery="${prompts.recoveryConfirmation}", doctors="${prompts.availableDoctors}"`,
+    "Important language behavior:",
+    "If caller speaks Gujarati, answer in Gujarati.",
+    "If caller speaks Hindi, answer in Hindi.",
+    "If caller mixes Hinglish, answer in natural Hinglish.",
+    "If caller speaks English, answer in English.",
+    "Do not over-translate names, times, dates, or phone numbers.",
     "If the utterance is unrelated, ambiguous, or too new for the prompt set, use a simple human-style freeform reply that asks one short clarifying question in the user's language."
   ].join("\n");
 }
@@ -3149,7 +3202,32 @@ function cleanGujaratiPatientNameCandidate(value: string): string | null {
     "\u0ab5\u0abe\u0ab2\u0ac0",
     "\u0ab5\u0abe\u0ab2\u0abe",
     "\u0ab5\u0abe\u0ab2\u0acb",
-    "\u0ab5\u0abe\u0ab2"
+    "\u0ab5\u0abe\u0ab2",
+    "\u0aae\u0abe\u0ab0\u0abe",
+    "\u0aae\u0abe\u0ab0\u0ac0",
+    "\u0aae\u0abe\u0ab0\u0ac1\u0a82",
+    "\u0a95\u0abe\u0a95\u0abe\u0aa8\u0ac1\u0a82",
+    "\u0a95\u0abe\u0a95\u0abe\u0aa8\u0ac1",
+    "\u0aae\u0abe\u0aae\u0abe\u0aa8\u0ac1\u0a82",
+    "\u0aae\u0abe\u0aae\u0abe\u0aa8\u0ac1",
+    "\u0aae\u0aae\u0acd\u0aae\u0ac0\u0aa8\u0ac1\u0a82",
+    "\u0aae\u0aae\u0acd\u0aae\u0ac0\u0aa8\u0ac1",
+    "\u0aaa\u0aaa\u0acd\u0aaa\u0abe\u0aa8\u0ac1\u0a82",
+    "\u0aaa\u0aaa\u0acd\u0aaa\u0abe\u0aa8\u0ac1",
+    "\u0aad\u0abe\u0a88\u0aa8\u0ac1\u0a82",
+    "\u0aad\u0abe\u0a88\u0aa8\u0ac1",
+    "\u0aac\u0ab9\u0ac7\u0aa8\u0aa8\u0ac1\u0a82",
+    "\u0aac\u0ab9\u0ac7\u0aa8\u0aa8\u0ac1",
+    "\u0aaa\u0aa4\u0acd\u0aa8\u0ac0\u0aa8\u0ac1\u0a82",
+    "\u0aaa\u0aa4\u0acd\u0aa8\u0ac0\u0aa8\u0ac1",
+    "\u0aaa\u0aa4\u0abf\u0aa8\u0ac1\u0a82",
+    "\u0aaa\u0aa4\u0abf\u0aa8\u0ac1",
+    "\u0aac\u0abe\u0ab3\u0a95\u0aa8\u0ac1\u0a82",
+    "\u0aac\u0abe\u0ab3\u0a95\u0aa8\u0ac1",
+    "\u0aa6\u0ac0\u0a95\u0ab0\u0abe\u0aa8\u0ac1\u0a82",
+    "\u0aa6\u0ac0\u0a95\u0ab0\u0abe\u0aa8\u0ac1",
+    "\u0aa6\u0ac0\u0a95\u0ab0\u0ac0\u0aa8\u0ac1\u0a82",
+    "\u0aa6\u0ac0\u0a95\u0ab0\u0ac0\u0aa8\u0ac1"
   ];
   const suffixPattern = new RegExp(`\\s+(?:${suffixWords.map(escapeRegExp).join("|")})$`, "giu");
   let candidate = normalizePatientNameText(value);
@@ -3165,7 +3243,7 @@ function cleanGujaratiPatientNameCandidate(value: string): string | null {
   }
 
   candidate = candidate
-    .replace(/\b(please|plz|patient|name|naam|is|hai|write|book|booking|kar do|karna|karo)\b/giu, " ")
+    .replace(/\b(please|plz|patient|name|naam|is|hai|write|book|booking|kar do|karna|karo|my|his|her|their|father|mother|mom|mum|dad|wife|husband|son|daughter|child|kid|baby|brother|sister|uncle|aunt|grandfather|grandmother|kaka|kaki|mama|mami|bhai|ben)\b/giu, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -3240,16 +3318,27 @@ function extractGujaratiPatientName(transcript: string): string | null {
 
   const patterns = [
     /(?:\u0aae\u0abe\u0ab0\u0ac1\u0a82|\u0aae\u0abe\u0ab0\u0ac1|\u0aae\u0abe\u0ab0\u0ac2|\u0aa6\u0ab0\u0acd\u0aa6\u0ac0\u0aa8\u0ac1\u0a82|\u0aa6\u0ab0\u0acd\u0aa6\u0ac0\u0aa8\u0ac1|\u0aa6\u0ab0\u0acd\u0aa6\u0ac0|\u0aaa\u0ac7\u0ab6\u0aa8\u0acd\u0a9f\u0aa8\u0ac1\u0a82|\u0aaa\u0ac7\u0ab6\u0aa8\u0acd\u0a9f|\u0a9b\u0acb\u0a95\u0ab0\u0ac0\u0aa8\u0ac1\u0a82|\u0a9b\u0acb\u0a95\u0ab0\u0abe\u0aa8\u0ac1\u0a82|\u0a8f\u0aa8\u0ac1\u0a82|\u0a8f\u0aa8\u0ac1|\u0a9c\u0ac7\u0aa8\u0ac1\u0a82|\u0a9c\u0ac7\u0aa8\u0ac1)?\s*\u0aa8\u0abe\u0aae\s+([\p{L}\p{M} ]+?)(?:\s+\u0a9b\u0ac7|\s+\u0ab0\u0ab9\u0ac7\u0ab6\u0ac7|$)/iu,
+    /(?:\u0aae\u0abe\u0ab0\u0abe|\u0aae\u0abe\u0ab0\u0ac0|\u0a95\u0abe\u0a95\u0abe\u0aa8\u0ac1\u0a82|\u0aae\u0abe\u0aae\u0abe\u0aa8\u0ac1\u0a82|\u0aae\u0aae\u0acd\u0aae\u0ac0\u0aa8\u0ac1\u0a82|\u0aaa\u0aaa\u0acd\u0aaa\u0abe\u0aa8\u0ac1\u0a82|\u0aad\u0abe\u0a88\u0aa8\u0ac1\u0a82|\u0aac\u0ab9\u0ac7\u0aa8\u0aa8\u0ac1\u0a82|\u0aaa\u0aa4\u0acd\u0aa8\u0ac0\u0aa8\u0ac1\u0a82|\u0aaa\u0aa4\u0abf\u0aa8\u0ac1\u0a82|\u0aac\u0abe\u0ab3\u0a95\u0aa8\u0ac1\u0a82|\u0aa6\u0ac0\u0a95\u0ab0\u0abe\u0aa8\u0ac1\u0a82|\u0aa6\u0ac0\u0a95\u0ab0\u0ac0\u0aa8\u0ac1\u0a82)\s+\u0aa8\u0abe\u0aae\s+([\p{L}\p{M} ]+?)(?:\s+\u0a9b\u0ac7|\s+\u0ab0\u0ab9\u0ac7\u0ab6\u0ac7|$)/iu,
     /([\p{L}\p{M} ]+?)\s+\u0aa8\u0abe\u0aae\u0ac7\s+(?:\u0aac\u0ac1\u0a95|\u0aac\u0ac1\u0a95\u0abf\u0a82\u0a97|\u0a85\u0aaa\u0acb\u0a87\u0aa8\u0acd\u0a9f)/iu
   ];
 
   for (const pattern of patterns) {
     const match = normalized.match(pattern);
-    if (match?.[1]) {
-      const candidate = cleanGujaratiPatientNameCandidate(match[1]);
+    const rawCandidate = match?.[2] ?? match?.[1];
+    if (rawCandidate) {
+      const candidate = cleanGujaratiPatientNameCandidate(rawCandidate);
       if (candidate) {
         return candidate;
       }
+    }
+  }
+
+  const shortRelationPattern = /^(?:\u0aae\u0abe\u0ab0\u0abe|\u0aae\u0abe\u0ab0\u0ac0|\u0aae\u0abe\u0ab0\u0ac1\u0a82)\s+(?:\u0a95\u0abe\u0a95\u0abe|\u0a95\u0abe\u0a95\u0ac0|\u0aae\u0abe\u0aae\u0abe|\u0aae\u0abe\u0aae\u0ac0|\u0aae\u0aae\u0acd\u0aae\u0ac0|\u0aaa\u0aaa\u0acd\u0aaa\u0abe|\u0aaa\u0aa4\u0abf|\u0aaa\u0aa4\u0acd\u0aa8\u0ac0|\u0aad\u0abe\u0a88|\u0aac\u0ab9\u0ac7\u0aa8|\u0aac\u0abe\u0ab3\u0a95|\u0aa6\u0ac0\u0a95\u0ab0\u0acb|\u0aa6\u0ac0\u0a95\u0ab0\u0ac0)\s+([\p{L}\p{M} ]+)$/iu;
+  const shortRelationMatch = normalized.match(shortRelationPattern);
+  if (shortRelationMatch?.[1]) {
+    const candidate = cleanGujaratiPatientNameCandidate(shortRelationMatch[1]);
+    if (candidate) {
+      return candidate;
     }
   }
 
@@ -3284,17 +3373,39 @@ function isPromptLikePatientName(transcript: string): boolean {
   return [
     /^દર્દીનું નામ$/u,
     /^દર્દીનુ નામ$/u,
+    /^દર્દીનું નામ છે$/u,
+    /^દર્દીનુ નામ છે$/u,
     /^દર્દીનું$/u,
     /^દર્દીનુ$/u,
+    /^દર્દી નામ$/u,
     /^પેશન્ટનું નામ$/u,
     /^પેશન્ટનુ નામ$/u,
+    /^પેશન્ટનું નામ છે$/u,
+    /^પેશન્ટનુ નામ છે$/u,
     /^પેશન્ટ$/u,
+    /^દર્દી$/u,
+    /^જેનું નામ$/u,
+    /^જેનુ નામ$/u,
+    /^એનું નામ$/u,
+    /^એનુ નામ$/u,
+    /^patient nu name$/iu,
+    /^patient name che$/iu,
     /^patient name$/iu,
+    /^patient ka name$/iu,
+    /^dardi nu naam$/iu,
+    /^dardi nu nam$/iu,
+    /^dardi naam$/iu,
+    /^dardi nu naam che$/iu,
+    /^jenu naam$/iu,
+    /^enu naam$/iu,
     /^name$/iu,
     /^naam$/iu,
     /^mera naam$/iu,
     /^mera$/iu,
-    /^my name$/iu
+    /^my name$/iu,
+    /^his name$/iu,
+    /^her name$/iu,
+    /^their name$/iu
   ].some((pattern) => pattern.test(normalized));
 }
 
@@ -3422,6 +3533,38 @@ function isPlainYesNoUtterance(transcript: string): boolean {
     .every((token) => fillerTokens.has(token));
 }
 
+function extractPatientNameFromEmbeddedCue(transcript: string): string | null {
+  const normalized = normalizePatientNameText(transcript);
+  if (!normalized) {
+    return null;
+  }
+
+  const patterns = [
+    /^(?:[\p{L}\p{M} ]+?\s+)?\u0aa6\u0ab0\u0acd\u0aa6\u0ac0\u0aa8\u0ac1\u0a82 \u0aa8\u0abe\u0aae\s+([\p{L}\p{M} ]+)$/iu,
+    /^(?:[\p{L}\p{M} ]+?\s+)?\u0aa6\u0ab0\u0acd\u0aa6\u0ac0\u0aa8\u0ac1 \u0aa8\u0abe\u0aae\s+([\p{L}\p{M} ]+)$/iu,
+    /^(?:[\p{L}\p{M} ]+?\s+)?\u0aa6\u0ab0\u0acd\u0aa6\u0ac0 \u0aa8\u0abe\u0aae\s+([\p{L}\p{M} ]+)$/iu,
+    /^(?:[\p{L}\p{M} ]+?\s+)?\u0aaa\u0ac7\u0ab6\u0aa8\u0acd\u0a9f\u0aa8\u0ac1\u0a82 \u0aa8\u0abe\u0aae\s+([\p{L}\p{M} ]+)$/iu,
+    /^(?:[\p{L}\p{M} ]+?\s+)?\u0aaa\u0ac7\u0ab6\u0aa8\u0acd\u0a9f \u0aa8\u0abe\u0aae\s+([\p{L}\p{M} ]+)$/iu,
+    /^(?:[\p{L}\p{M} ]+?\s+)?patient name\s+([\p{L}\p{M} ]+)$/iu,
+    /^(?:[\p{L}\p{M} ]+?\s+)?dardi nu naam\s+([\p{L}\p{M} ]+)$/iu,
+    /^(?:[\p{L}\p{M} ]+?\s+)?(?:mera naam|my name)\s+([\p{L}\p{M} ]+)$/iu
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (!match?.[1]) {
+      continue;
+    }
+
+    const candidate = cleanExtractedPatientName(match[1]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 function extractPatientName(transcript: string): string | null {
   if (isPromptLikePatientName(transcript)) {
     return null;
@@ -3429,6 +3572,11 @@ function extractPatientName(transcript: string): string | null {
 
   if (isPlainYesNoUtterance(transcript)) {
     return null;
+  }
+
+  const embeddedCueName = extractPatientNameFromEmbeddedCue(transcript);
+  if (embeddedCueName) {
+    return embeddedCueName;
   }
 
   const gujaratiName = extractGujaratiPatientName(transcript);
@@ -3449,6 +3597,11 @@ function extractPatientName(transcript: string): string | null {
   const patterns = [
     /mera naam\s+([\p{L}\p{M} ]+?)\s+hai/iu,
     /mera naam\s+([\p{L}\p{M} ]+)/iu,
+    /(?:mere|meri|my|his|her|their)\s+(?:father|mother|mom|mum|dad|wife|husband|son|daughter|child|kid|baby|brother|sister|uncle|aunt|grandfather|grandmother|patient)\s+name is\s+([\p{L}\p{M} ]+)/iu,
+    /(?:mere|meri)\s+(?:papa|mummy|mammi|maa|baap|pitaji|mataji|beta|beti|bachche|bachcha|bhai|behen|kaka|kaki|mama|mami|patni|pati)\s+ka\s+naam\s+([\p{L}\p{M} ]+?)\s+hai/iu,
+    /(?:mere|meri)\s+(?:papa|mummy|mammi|maa|baap|pitaji|mataji|beta|beti|bachche|bachcha|bhai|behen|kaka|kaki|mama|mami|patni|pati)\s+ka\s+naam\s+([\p{L}\p{M} ]+)/iu,
+    /(?:mere|meri)\s+(?:papa|mummy|mammi|maa|baap|pitaji|mataji|beta|beti|bachche|bachcha|bhai|behen|kaka|kaki|mama|mami|patni|pati)\s+([\p{L}\p{M} ]+)$/iu,
+    /(?:my|his|her|their)\s+(?:father|mother|mom|mum|dad|wife|husband|son|daughter|child|kid|baby|brother|sister|uncle|aunt|grandfather|grandmother)\s+([\p{L}\p{M} ]+)$/iu,
     /my name is\s+([\p{L}\p{M} ]+)/iu,
     /patient name\s+([\p{L}\p{M} ]+)/iu,
     /\u0aae\u0abe\u0ab0\u0ac1\u0a82 \u0aa8\u0abe\u0aae\s+([\p{L}\p{M} ]+?)\s+\u0a9b\u0ac7/iu,
@@ -3483,8 +3636,8 @@ function extractPatientName(transcript: string): string | null {
   const cleaned = transcript
     .replace(/[.,!?;:à¥¤]/g, " ")
     .replace(/\b(àª®àª¾àª°à«àª‚|àª®àª¾àª°à«|àª¨àª¾àª®|àª›à«‡|àª¦àª°à«àª¦à«€)\b/gu, " ")
-    .replace(/\b(mera|naam|hai|my|name|is|patient)\b/giu, " ")
-    .replace(/\b(à¤®à¥‡à¤°à¤¾|à¤¨à¤¾à¤®|à¤¹à¥ˆ)\b/gu, " ")
+    .replace(/\b(mera|mere|meri|naam|hai|my|name|is|patient|his|her|their|father|mother|mom|mum|dad|wife|husband|son|daughter|child|kid|baby|brother|sister|uncle|aunt|grandfather|grandmother|papa|mummy|mammi|maa|baap|pitaji|mataji|beta|beti|bachche|bachcha|bhai|behen|kaka|kaki|mama|mami|patni|pati)\b/giu, " ")
+    .replace(/\b(à¤®à¥‡à¤°à¤¾|à¤®à¥‡à¤°à¥‡|à¤®à¥‡à¤°à¥€|à¤¨à¤¾à¤®|à¤¹à¥ˆ|à¤ªà¤¾à¤ªà¤¾|à¤®à¤®à¥à¤®à¥€|à¤®à¤¾à¤|à¤¬à¤¾à¤ª|à¤ªà¤¿à¤¤à¤¾à¤œà¥€|à¤®à¤¾à¤¤à¤¾à¤œà¥€|à¤¬à¥‡à¤Ÿà¤¾|à¤¬à¥‡à¤Ÿà¥€|à¤¬à¤šà¥à¤šà¥‡|à¤¬à¤šà¥à¤šà¤¾|à¤­à¤¾à¤ˆ|à¤¬à¤¹à¤¨|à¤ªà¤¤à¥à¤¨à¥€|à¤ªà¤¤à¤¿)\b/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -3500,9 +3653,9 @@ function extractPatientName(transcript: string): string | null {
 function cleanExtractedPatientName(value: string): string | null {
   const candidate = String(value || "")
     .replace(/[.,!?;:à¥¤]/g, " ")
-    .replace(/\b(àª®àª¾àª°à«àª‚|àª®àª¾àª°à«|àª¨àª¾àª®|àª›à«‡|àª¦àª°à«àª¦à«€|àª¹àª¾|àªœà«€)\b/gu, " ")
-    .replace(/\b(ji|jee|haan|ha|mera|naam|name|my|is|hai|patient)\b/giu, " ")
-    .replace(/\b(à¤œà¥€|à¤¹à¤¾à¤|à¤¹à¤¾à¤‚|à¤®à¥‡à¤°à¤¾|à¤¨à¤¾à¤®|à¤¹à¥ˆ|à¤®à¥ˆà¤‚|à¤®à¥‡|à¤®à¥‡à¤‚)\b/gu, " ")
+    .replace(/\b(àª®àª¾àª°à«àª‚|àª®àª¾àª°à«|àª¨àª¾àª®|àª›à«‡|àª¦àª°à«àª¦à«€|àª¹àª¾|àªœà«€|àª®àª¾àª°àª¾|àª®àª¾àª°à«€|àª•àª¾àª•àª¾àª¨à«àª‚|àª®àª¾àª®àª¾àª¨à«àª‚|àª®àª®à«àª®à«€àª¨à«àª‚|àªªàªªà«àªªàª¾àª¨à«àª‚|àª­àª¾àªˆàª¨à«àª‚|àª¬àª¹à«‡àª¨àª¨à«àª‚|àªªàª¤à«àª¨à«€àª¨à«àª‚|àªªàª¤àª¿àª¨à«àª‚|àª¬àª¾àª³àª•àª¨à«àª‚|àª¦à«€àª•àª°àª¾àª¨à«àª‚|àª¦à«€àª•àª°à«€àª¨à«àª‚)\b/gu, " ")
+    .replace(/\b(ji|jee|haan|ha|mera|mere|meri|naam|name|my|his|her|their|is|hai|patient|father|mother|mom|mum|dad|wife|husband|son|daughter|child|kid|baby|brother|sister|uncle|aunt|grandfather|grandmother|kaka|kaki|mama|mami|bhai|behen)\b/giu, " ")
+    .replace(/\b(à¤œà¥€|à¤¹à¤¾à¤|à¤¹à¤¾à¤‚|à¤®à¥‡à¤°à¤¾|à¤®à¥‡à¤°à¥‡|à¤®à¥‡à¤°à¥€|à¤¨à¤¾à¤®|à¤¹à¥ˆ|à¤®à¥ˆà¤‚|à¤®à¥‡|à¤®à¥‡à¤‚|à¤ªà¤¾à¤ªà¤¾|à¤®à¤®à¥à¤®à¥€|à¤®à¤¾à¤|à¤¬à¤¾à¤ª|à¤ªà¤¿à¤¤à¤¾à¤œà¥€|à¤®à¤¾à¤¤à¤¾à¤œà¥€|à¤¬à¥‡à¤Ÿà¤¾|à¤¬à¥‡à¤Ÿà¥€|à¤¬à¤šà¥à¤šà¤¾|à¤¬à¤šà¥à¤šà¥‡|à¤­à¤¾à¤ˆ|à¤¬à¤¹à¤¨|à¤ªà¤¤à¥à¤¨à¥€|à¤ªà¤¤à¤¿|à¤°à¥‹à¤—à¥€|à¤®à¤°à¥€à¤œà¤¼|à¤®à¤°à¥€à¤œ)\b/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -3511,6 +3664,29 @@ function cleanExtractedPatientName(value: string): string | null {
   }
 
   if (isPromptLikePatientName(candidate)) {
+    return null;
+  }
+
+  if ([
+    "દર્દી",
+    "દર્દીનું નામ",
+    "દર્દીનુ નામ",
+    "પેશન્ટ",
+    "પેશન્ટનું નામ",
+    "પેશન્ટનુ નામ",
+    "જેનું નામ",
+    "જેનુ નામ",
+    "એનું નામ",
+    "એનુ નામ",
+    "patient",
+    "patient name",
+    "name",
+    "naam",
+    "my name",
+    "mera naam",
+    "his name",
+    "her name"
+  ].includes(candidate.toLowerCase())) {
     return null;
   }
 
@@ -4042,6 +4218,15 @@ function mapTimeFlexible(normalizedTranscript: string): string | null {
   if ([
     "evening",
     "shaam",
+    "night",
+    "raat",
+    "raate",
+    "raat ko",
+    "ratre",
+    "raatre",
+    "રાત્રે",
+    "રાતે",
+    "રાત",
     "à¤¶à¤¾à¤®",
     "à¤¶à¤¾à¤® à¤•à¥‹",
     "evening slot",
@@ -4119,6 +4304,22 @@ function inferYearForMonthDay(day: number, month: number, now = new Date()): num
   return currentYear + 1;
 }
 
+function inferMonthYearForBareDay(day: number, now = new Date()): { month: number; year: number } | null {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const currentMonthCandidate = validCalendarDate(day, now.getMonth(), now.getFullYear());
+  if (currentMonthCandidate && currentMonthCandidate >= today) {
+    return { month: now.getMonth(), year: now.getFullYear() };
+  }
+
+  const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const nextMonthCandidate = validCalendarDate(day, nextMonthDate.getMonth(), nextMonthDate.getFullYear());
+  if (nextMonthCandidate) {
+    return { month: nextMonthDate.getMonth(), year: nextMonthDate.getFullYear() };
+  }
+
+  return null;
+}
+
 function parseCalendarDateExpression(transcript: string): string | null {
   const normalized = normalizeCalendarText(transcript);
   const isoDate = normalized.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
@@ -4154,6 +4355,16 @@ function parseCalendarDateExpression(transcript: string): string | null {
     const year = yearValue < 100 ? 2000 + yearValue : yearValue;
     const parsed = validCalendarDate(day, month, year);
     if (parsed) return formatIsoCalendarDate(parsed);
+  }
+
+  const bareDayMatch = normalized.match(/\b(\d{1,2})\s*(tarikh|tarik|date|taarikh|તારીખ|તારિખ)\b/u);
+  if (bareDayMatch) {
+    const day = Number(bareDayMatch[1]);
+    const inferred = inferMonthYearForBareDay(day);
+    if (inferred) {
+      const parsed = validCalendarDate(day, inferred.month, inferred.year);
+      if (parsed) return formatIsoCalendarDate(parsed);
+    }
   }
 
   const weekdayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -4486,6 +4697,11 @@ function mapDateFlexible(normalizedTranscript: string): string | null {
         "બુધવાર",
         "બુધવારે",
         "આવતા બુધવારે",
+        "વેન્સડે",
+        "વેન્સડે છે",
+        "વેન્સલે",
+        "વેન્સલે છે",
+        "વેનસલે",
         "\u092c\u0941\u0927\u0935\u093e\u0930",
         "\u092c\u0941\u0927\u0935\u093e\u0930 \u0915\u094b",
         "\u092c\u0941\u0927\u0935\u093e\u0930\u0947",
@@ -4676,6 +4892,9 @@ function wantsAlternativeSlot(normalizedTranscript: string): boolean {
   return [
     "second slot",
     "another slot",
+    "another available slot",
+    "any other slot",
+    "other available slot",
     "other slot",
     "different slot",
     "next slot",
@@ -4683,10 +4902,23 @@ function wantsAlternativeSlot(normalizedTranscript: string): boolean {
     "earlier slot",
     "different time",
     "another time",
+    "any other time",
     "dusra slot",
     "doosra slot",
+    "dusra available slot",
+    "doosra available slot",
+    "koi dusra slot",
+    "koi aur slot",
+    "koi dusra available slot",
+    "koi aur available slot",
     "\u0aac\u0ac0\u0a9c\u0acb \u0ab8\u0acd\u0ab2\u0acb\u0a9f",
     "\u0aac\u0ac0\u0a9c\u0ac1\u0a82 \u0ab8\u0acd\u0ab2\u0acb\u0a9f",
+    "\u0a95\u0acb\u0a88 \u0a85\u0aa8\u0acd\u0aaf \u0ab8\u0acd\u0ab2\u0acb\u0a9f",
+    "\u0a95\u0acb\u0a88 \u0aac\u0ac0\u0a9c\u0acb \u0ab8\u0acd\u0ab2\u0acb\u0a9f",
+    "\u0a95\u0acb\u0a88 \u0aac\u0ac0\u0a9c\u0acb \u0a9f\u0abe\u0a87\u0aae",
+    "\u0a95\u0acb\u0a88 \u0a85\u0aa8\u0acd\u0aaf time",
+    "\u0a95\u0acb\u0a88 \u0a85\u0aa8\u0acd\u0aaf available",
+    "\u0aac\u0ac0\u0a9c\u0acb available",
     "\u0a85\u0ab2\u0a97 \u0ab8\u0acd\u0ab2\u0acb\u0a9f",
     "\u0aac\u0ac0\u0a9c\u0acb time",
     "\u0a85\u0ab2\u0a97 time",
@@ -4708,8 +4940,46 @@ function wantsAlternativeSlot(normalizedTranscript: string): boolean {
     "à¤¦à¥‚à¤¸à¤°à¤¾ à¤¸à¥à¤²à¥‰à¤Ÿ à¤¬à¤¤à¤¾à¤‡à¤",
     "à¤¦à¥‚à¤¸à¤°à¥‡ à¤¸à¥à¤²à¥‰à¤Ÿà¥à¤¸ à¤¬à¤¤à¤¾à¤‡à¤",
     "à¤”à¤° à¤•à¥‹à¤ˆ à¤¸à¥à¤²à¥‰à¤Ÿ",
-    "à¤•à¥‹à¤ˆ à¤¸à¥à¤²à¥‰à¤Ÿ"
+    "à¤•à¥‹à¤ˆ à¤¸à¥à¤²à¥‰à¤Ÿ",
+    "à¤•à¥‹à¤ˆ à¤”à¤° à¤¸à¥à¤²à¥‰à¤Ÿ",
+    "à¤•à¥‹à¤ˆ à¤¦à¥à¤¸à¤°à¤¾ à¤¸à¥à¤²à¥‰à¤Ÿ"
   ].some((phrase) => normalizedTranscript.includes(phrase));
+}
+
+function wantsAnotherDay(normalizedTranscript: string): boolean {
+  const hasKnownPhrase = [
+    "another day",
+    "other day",
+    "different day",
+    "next day",
+    "shift to another day",
+    "same doctor different day",
+    "koi aur din",
+    "dusra din",
+    "doosra din",
+    "alag din",
+    "બીજો દિવસ",
+    "બીજા દિવસે",
+    "બીજો દહાડો",
+    "બીજો દિન",
+    "અન્ય દિવસ",
+    "અલગ દિવસ",
+    "બીજી તારીખ",
+    "2જો દિવસ",
+    "અને બીજો દિવસ",
+    "અને બીજો દિવસ ચાલે",
+    "બીજો દિવસ ચાલે",
+    "બીજા દિવસ ચાલે",
+    "bijo divas",
+    "bija divase",
+    "alag divas"
+  ].some((phrase) => normalizedTranscript.includes(phrase));
+
+  if (hasKnownPhrase) {
+    return true;
+  }
+
+  return /(?:^|\s)(?:અને\s*)?(?:2જો|બીજો|બીજા|બીજી)\s+(?:દિવસ|દિવસે|દહાડો|દિન|તારીખ)(?:\s|$)/u.test(normalizedTranscript);
 }
 
 function mapYesNo(normalizedTranscript: string): "yes" | "no" | null {
@@ -7569,6 +7839,10 @@ export class BotService {
 
         case "waiting_for_date": {
           const acceptedOffer = session.availabilityOfferedDate && mapYesNo(normalizedTranscript) === "yes";
+          const rejectedOfferForAnotherDay = !!session.availabilityOfferedDate && wantsAnotherDay(normalizedTranscript);
+          const offeredSlotSelection = session.availabilityOfferedDate
+            ? matchOfferedSlot(normalizedTranscript, session.availabilityOfferedSlots)
+            : null;
           const acceptedRememberedDay = !acceptedOffer && getConversationMemory(session).lastDay && mapYesNo(normalizedTranscript) === "yes";
           const date = acceptedOffer
             ? session.availabilityOfferedDate
@@ -7576,7 +7850,31 @@ export class BotService {
               ? getConversationMemory(session).lastDay
               : mapDateFlexible(normalizedTranscript);
 
-          if (date) {
+          if (rejectedOfferForAnotherDay && !date) {
+            session = updateSession(session, {
+              preferredDate: null,
+              preferredTime: null,
+              availabilityOfferedDate: null,
+              availabilityOfferedTime: null,
+              availabilityOfferedSlots: []
+            });
+            reply = withExtraInstructions(prompts.askDate, prompts);
+            stage = "waiting_for_date";
+            action = "ask_new_date_after_rejecting_offer";
+          } else if (session.availabilityOfferedDate && offeredSlotSelection) {
+            session = updateSession(session, {
+              preferredDate: session.availabilityOfferedDate,
+              preferredTime: offeredSlotSelection,
+              availabilityOfferedDate: null,
+              availabilityOfferedTime: null,
+              availabilityOfferedSlots: []
+            });
+            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+            session = next?.session ?? session;
+            reply = next?.reply ?? withExtraInstructions(prompts.askPatientName, prompts);
+            stage = next?.stage ?? "waiting_for_patient_name";
+            action = "capture_offered_date_and_time";
+          } else if (date) {
             session = updateSession(session, {
               preferredDate: date,
               preferredTime: acceptedOffer ? session.availabilityOfferedTime ?? session.preferredTime : session.preferredTime,
@@ -8264,7 +8562,7 @@ export class BotService {
       session = updateSession(session, { callStatus: "completed" });
     }
 
-    if (action === "demo_fallback") {
+    if (shouldUseSemanticLlmFallback(action, intelligence)) {
       const semanticFallback = await applySemanticFallbackReply(
         input.transcript,
         { ...session, bookingStage: stage, latestIntent },
@@ -8279,6 +8577,7 @@ export class BotService {
         latestIntent = semanticFallback.intent;
       }
       action = semanticFallback.action;
+      session = appendLlmUsage(session, clinicSettings?.llmProviders, input.transcript, reply);
     }
 
     if (canUseConfiguredLlmReply(action)) {
@@ -8291,21 +8590,7 @@ export class BotService {
         runtimeDoctors,
         reply
       );
-
-      if (llmConfig && llmConfig.primaryProvider && llmConfig.primaryProvider !== "mock") {
-        session = updateSession(session, {
-          usageLedger: [
-            ...(session.usageLedger ?? []),
-            createUsageLedgerEntry({
-              service: "llm",
-              provider: llmConfig.primaryProvider,
-              model: llmConfig.model,
-              text: `${normalizedTranscript}\n${reply}`,
-              quantity: reply.length
-            })
-          ]
-        });
-      }
+      session = appendLlmUsage(session, llmConfig, normalizedTranscript, reply);
     }
 
     reply = normalizeReplyForSpeech(reply, prompts);
@@ -8467,7 +8752,7 @@ export class BotService {
       stage = "waiting_for_specialization";
     }
 
-    if (action === "clarify" || action === "demo_fallback") {
+    if (shouldUseSemanticLlmFallback(action, intelligence)) {
       const semanticFallback = await applySemanticFallbackReply(
         input.transcript,
         { ...session, bookingStage: stage, latestIntent },
@@ -8482,6 +8767,7 @@ export class BotService {
         latestIntent = semanticFallback.intent;
       }
       action = semanticFallback.action;
+      session = appendLlmUsage(session, clinicSettings?.llmProviders, input.transcript, reply);
     }
 
     reply = normalizeReplyForSpeech(reply, prompts);

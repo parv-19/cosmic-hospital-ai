@@ -22,6 +22,7 @@ export function BehaviourPage() {
     languageNormalization: true,
     smartClarification: true,
     availabilityFirst: true,
+    llmFallbackEnabled: true,
     confidenceThreshold: 0.7,
   });
   const [costDisplay, setCostDisplay] = useState({
@@ -64,6 +65,7 @@ export function BehaviourPage() {
       languageNormalization: r.intelligenceSettings?.languageNormalization ?? true,
       smartClarification: r.intelligenceSettings?.smartClarification ?? true,
       availabilityFirst: r.intelligenceSettings?.availabilityFirst ?? true,
+      llmFallbackEnabled: r.intelligenceSettings?.llmFallbackEnabled ?? true,
       confidenceThreshold: r.intelligenceSettings?.confidenceThreshold ?? 0.7,
     });
     setCostDisplay({
@@ -201,6 +203,7 @@ export function BehaviourPage() {
               ["languageNormalization", "Hindi/Hinglish normalization", "Use known Hindi, English, and mixed-language aliases"],
               ["availabilityFirst", "Check slots before details", "Use business hours and booked appointments before collecting patient details"],
               ["smartClarification", "Prefer confirmation over repetition", "Keep room for safer confirmation prompts as confidence improves"],
+              ["llmFallbackEnabled", "LLM fallback when rules fail", "Use configured LLM only when rule-based understanding is unclear or stuck"],
             ].map(([key, label, description]) => (
               <div key={key} className="flex items-center justify-between py-3">
                 <div>

@@ -96,6 +96,7 @@ const doctorBotSettingsSchema = new Schema(
       languageNormalization: { type: Boolean, default: true },
       smartClarification: { type: Boolean, default: true },
       availabilityFirst: { type: Boolean, default: true },
+      llmFallbackEnabled: { type: Boolean, default: true },
       confidenceThreshold: { type: Number, default: 0.7 }
     },
     costDisplay: {
@@ -507,6 +508,7 @@ export async function ensurePlatformSeedData(): Promise<void> {
               languageNormalization: true,
               smartClarification: true,
               availabilityFirst: true,
+              llmFallbackEnabled: true,
               confidenceThreshold: 0.7
             },
             costDisplay: {

@@ -62,6 +62,7 @@ type SettingsInput = {
     languageNormalization?: boolean;
     smartClarification?: boolean;
     availabilityFirst?: boolean;
+    llmFallbackEnabled?: boolean;
     confidenceThreshold?: number;
   };
   costDisplay?: {
@@ -672,6 +673,7 @@ export class DoctorService {
         languageNormalization: true,
         smartClarification: true,
         availabilityFirst: true,
+        llmFallbackEnabled: true,
         confidenceThreshold: 0.7
       },
       costDisplay: {
