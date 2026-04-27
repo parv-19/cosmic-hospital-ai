@@ -1751,7 +1751,10 @@ function asksDoctorList(normalizedTranscript: string): boolean {
     "\u0a95\u0aaf\u0abe \u0aa1\u0acb\u0a95\u0acd\u0a9f\u0ab0",
     "\u0aa1\u0acb\u0a95\u0acd\u0a9f\u0ab0 \u0ab2\u0abf\u0ab8\u0acd\u0a9f",
     "\u0aa1\u0acb\u0a95\u0acd\u0a9f\u0ab0 \u0a89\u0aaa\u0ab2\u0aac\u0acd\u0aa7",
-    "\u0a95\u0acb\u0aa3 \u0a95\u0acb\u0aa3 \u0aa1\u0acb\u0a95\u0acd\u0a9f\u0ab0"
+    "\u0a95\u0acb\u0aa3 \u0a95\u0acb\u0aa3 \u0aa1\u0acb\u0a95\u0acd\u0a9f\u0ab0",
+    "\u0aae\u0aa8\u0ac7 \u0aa1\u0acb\u0a95\u0acd\u0a9f\u0ab0\u0aa8\u0abe \u0aa8\u0abe\u0aae \u0a95\u0ab9\u0acb",
+    "\u0aa1\u0acb\u0a95\u0acd\u0a9f\u0ab0\u0aa8\u0abe \u0aa8\u0abe\u0aae \u0a95\u0ab9\u0acb",
+    "\u0aa1\u0acb\u0a95\u0acd\u0a9f\u0ab0 \u0aa8\u0abe \u0aa8\u0abe\u0aae \u0a95\u0ab9\u0acb"
   ].some((phrase) => normalizedTranscript.includes(phrase))) {
     return true;
   }
@@ -1764,6 +1767,10 @@ function asksDoctorList(normalizedTranscript: string): boolean {
     "kon kon se doctor",
     "kaunse doctor",
     "doctor list",
+    "doctor names",
+    "name of doctors",
+    "doctor na naam",
+    "doktor na naam",
     "à¤•à¥Œà¤¨ à¤•à¥Œà¤¨ à¤¸à¥‡ à¤¡à¥‰à¤•à¥à¤Ÿà¤°",
     "à¤•à¥Œà¤¨à¤¸à¥‡ à¤¡à¥‰à¤•à¥à¤Ÿà¤°",
     "à¤¡à¥‰à¤•à¥à¤Ÿà¤° à¤…à¤µà¥‡à¤²à¥‡à¤¬à¤²",
@@ -1790,6 +1797,42 @@ function buildAvailableDoctorsReply(runtimeDoctors: RuntimeDoctor[], prompts?: C
     doctorList: doctorText,
     doctorOptions: doctorText
   });
+}
+
+function buildDoctorPreferenceSelectionPrompt(
+  session: DemoSessionRecord,
+  runtimeDoctors: RuntimeDoctor[],
+  prompts: ConversationPrompts
+): string {
+  const doctorPool = runtimeDoctors.length > 0 ? runtimeDoctors : FALLBACK_DOCTORS;
+  const filteredDoctors = session.selectedSpecialization
+    ? doctorPool.filter((doctor) => doctor.specialization === session.selectedSpecialization)
+    : doctorPool;
+
+  if (filteredDoctors.length === 0) {
+    return withExtraInstructions(prompts.askDoctorPreference, prompts);
+  }
+
+  const options = filteredDoctors.map((doctor) => formatDoctorNameForSpeech(doctor.name, prompts));
+  const lastOption = options.pop();
+  const joiner = isGujaratiPromptSet(prompts) ? "અને" : isEnglishPromptSet(prompts) ? "and" : "aur";
+  const doctorText = options.length > 0 ? `${options.join(", ")} ${joiner} ${lastOption}` : lastOption;
+
+  if (isGujaratiPromptSet(prompts)) {
+    return session.selectedSpecialization
+      ? `અમારી પાસે ${session.selectedSpecialization} માટે ${doctorText} ઉપલબ્ધ છે. તમારે કયા ડોક્ટર સાથે મળવું છે?`
+      : `અમારી પાસે ${doctorText} ઉપલબ્ધ છે. તમારે કયા ડોક્ટર સાથે મળવું છે?`;
+  }
+
+  if (isEnglishPromptSet(prompts)) {
+    return session.selectedSpecialization
+      ? `We have ${doctorText} available for ${session.selectedSpecialization}. Which doctor would you like to see?`
+      : `We have ${doctorText} available. Which doctor would you like to see?`;
+  }
+
+  return session.selectedSpecialization
+    ? `${session.selectedSpecialization} ke liye hamare yahan ${doctorText} available hain. Aap kis doctor se milna chahenge?`
+    : `Hamare yahan ${doctorText} available hain. Aap kis doctor se milna chahenge?`;
 }
 
 function resolveDoctorForFeeQuery(normalizedTranscript: string, session: DemoSessionRecord, runtimeDoctors: RuntimeDoctor[]): RuntimeDoctor | null {
@@ -6261,7 +6304,7 @@ function resolveBookingSlotCorrection(
       availabilityCheckKey: resolution.checkKey,
       availabilityOfferedSlots: resolution.offeredSlots
     });
-    const next = askNextMissingField(availableSession, prompts, intelligence);
+    const next = askNextMissingField(availableSession, runtimeDoctors, prompts, intelligence);
 
     return {
       session: next.session,
@@ -6707,11 +6750,17 @@ function buildRecoveryPrompt(stage: BookingStage, session: DemoSessionRecord, pr
 
 function askNextMissingField(
   session: DemoSessionRecord,
+  runtimeDoctors: RuntimeDoctor[],
   prompts: ConversationPrompts,
   intelligence: Required<IntelligenceSettings>
 ): { reply: string; stage: BookingStage; action: string; session: DemoSessionRecord } {
   if (!session.selectedDoctor && !session.selectedSpecialization) {
-    return { reply: withExtraInstructions(prompts.askSpecialization, prompts), stage: "waiting_for_specialization", action: "ask_missing_specialization", session };
+    return {
+      reply: buildDoctorPreferenceSelectionPrompt(session, runtimeDoctors, prompts),
+      stage: "waiting_for_doctor_preference",
+      action: "ask_missing_doctor_preference_first",
+      session
+    };
   }
 
   if (session.selectedSpecialization && !session.selectedDoctor) {
@@ -6719,7 +6768,12 @@ function askNextMissingField(
     if (lastDoctor) {
       return { reply: renderPrompt(prompts.confirmRememberedDoctor, { doctor: lastDoctor }), stage: "waiting_for_doctor_preference", action: "ask_confirm_last_doctor", session };
     }
-    return { reply: withExtraInstructions(prompts.askDoctorPreference, prompts), stage: "waiting_for_doctor_preference", action: "ask_missing_doctor_preference", session };
+    return {
+      reply: buildDoctorPreferenceSelectionPrompt(session, runtimeDoctors, prompts),
+      stage: "waiting_for_doctor_preference",
+      action: "ask_missing_doctor_preference",
+      session
+    };
   }
 
   if (!session.preferredDate) {
@@ -6790,7 +6844,11 @@ function applySmartEntities(
 
   if (!doctorPrompt) {
     const doctor = mapDoctorPreference(normalizedTranscript, next, runtimeDoctors);
-    if (doctor && !next.selectedDoctor) {
+    if (
+      doctor
+      && doctor.doctorPreference === "specific_doctor"
+      && doctor.selectedDoctor !== next.selectedDoctor
+    ) {
       const selectedDoctor = runtimeDoctors.find((runtimeDoctor) => runtimeDoctor.name === doctor.selectedDoctor) ?? null;
       next = updateSession(next, {
         doctorPreference: doctor.doctorPreference,
@@ -6915,7 +6973,7 @@ function resolveAvailabilityFirstStep(
       availabilityOfferedTime: null,
       availabilityOfferedSlots: resolution.offeredSlots
     });
-    const next = askNextMissingField(updated, prompts, intelligence);
+    const next = askNextMissingField(updated, runtimeDoctors, prompts, intelligence);
     return {
       session: next.session,
       reply: `${availabilityReply} ${next.reply}`,
@@ -7405,17 +7463,12 @@ export class BotService {
       && !["confirming", "reschedule_confirming", "cancel_confirming", "booked", "cancelled"].includes(session.bookingStage)
     ) {
       // ADDED:
-      const inferredDoctor = findDoctorForInferredSpecialization(inferenceResult.specialization, runtimeDoctors);
-      // ADDED:
       session = updateSession(session, {
         // ADDED:
         selectedSpecialization: inferenceResult.specialization,
-        // ADDED:
-        selectedDoctor: inferredDoctor?.name ?? session.selectedDoctor,
-        // ADDED:
-        doctorPreference: inferredDoctor ? "earliest_available" : session.doctorPreference,
-        // ADDED:
-        bookingStage: session.preferredDate ? session.bookingStage : "waiting_for_date"
+        selectedDoctor: session.selectedDoctor,
+        doctorPreference: session.doctorPreference,
+        bookingStage: session.preferredDate ? session.bookingStage : "waiting_for_doctor_preference"
       });
     }
     if (normalizedTranscript) {
@@ -7678,7 +7731,7 @@ export class BotService {
                 selectedDoctor: directDoctor.selectedDoctor,
                 doctorPreference: directDoctor.doctorPreference
               });
-              const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+              const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
               if (next) {
                 session = next.session;
                 reply = next.reply;
@@ -7694,14 +7747,14 @@ export class BotService {
               session = updateSession(session, {
                 selectedSpecialization: specialization.specialization
               });
-              const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+              const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
               if (next) {
                 session = next.session;
                 reply = next.reply;
                 stage = next.stage;
                 action = next.action === "ready_for_confirmation" ? "capture_specialization_ready" : "capture_specialization";
               } else {
-                reply = withExtraInstructions(prompts.askDoctorPreference, prompts);
+                reply = buildDoctorPreferenceSelectionPrompt(session, runtimeDoctors, prompts);
                 stage = "waiting_for_doctor_preference";
                 action = "capture_specialization";
               }
@@ -7711,20 +7764,20 @@ export class BotService {
               || hasDetectedIntent(intentLayer, "CHECK_AVAILABILITY", 0.6)
               || matchIntentStart(normalizedTranscript)
             ) {
-            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
             if (next) {
               session = next.session;
               reply = next.reply;
               stage = next.stage;
               action = next.action === "ready_for_confirmation" ? "capture_booking_intent_ready" : "capture_booking_intent";
             } else {
-              reply = withExtraInstructions(prompts.askSpecialization, prompts);
-              stage = "waiting_for_specialization";
+              reply = buildDoctorPreferenceSelectionPrompt(session, runtimeDoctors, prompts);
+              stage = "waiting_for_doctor_preference";
               action = "capture_booking_intent";
             }
             latestIntent = "book_appointment";
           } else if (intelligence.enabled && (session.selectedDoctor || session.selectedSpecialization || session.preferredDate || session.preferredTime)) {
-            const next = askNextMissingField(session, prompts, intelligence);
+            const next = askNextMissingField(session, runtimeDoctors, prompts, intelligence);
             session = next.session;
             reply = next.reply;
             stage = next.stage;
@@ -7757,7 +7810,7 @@ export class BotService {
               selectedDoctor: directDoctor.selectedDoctor,
               doctorPreference: directDoctor.doctorPreference
             });
-            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
             session = next?.session ?? session;
             reply = next?.reply ?? withExtraInstructions(prompts.askDate, prompts);
             stage = next?.stage ?? "waiting_for_date";
@@ -7766,13 +7819,13 @@ export class BotService {
             session = updateSession(session, {
               selectedSpecialization: specialization.specialization
             });
-            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
             session = next?.session ?? session;
-            reply = next?.reply ?? withExtraInstructions(prompts.askDoctorPreference, prompts);
+            reply = next?.reply ?? buildDoctorPreferenceSelectionPrompt(session, runtimeDoctors, prompts);
             stage = next?.stage ?? "waiting_for_doctor_preference";
             action = "capture_specialization";
           } else if (session.selectedDoctor || session.selectedSpecialization) {
-            const next = askNextMissingField(session, prompts, intelligence);
+            const next = askNextMissingField(session, runtimeDoctors, prompts, intelligence);
             session = next.session;
             reply = next.reply;
             stage = next.stage;
@@ -7815,9 +7868,9 @@ export class BotService {
               doctorPreference: resolvedDoctor ? "specific_doctor" : session.doctorPreference,
               selectedDoctor: resolvedDoctor?.name ?? session.selectedDoctor
             });
-            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
             session = next?.session ?? session;
-            reply = next?.reply ?? withExtraInstructions(prompts.askDoctorPreference, prompts);
+            reply = next?.reply ?? buildDoctorPreferenceSelectionPrompt(session, runtimeDoctors, prompts);
             stage = next?.stage ?? "waiting_for_doctor_preference";
             action = "capture_specialization_from_doctor_preference";
           } else if (preference) {
@@ -7825,7 +7878,7 @@ export class BotService {
               doctorPreference: preference.doctorPreference,
               selectedDoctor: preference.selectedDoctor
             });
-            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
             session = next?.session ?? session;
             reply = next?.reply ?? withExtraInstructions(prompts.askDate, prompts);
             stage = next?.stage ?? "waiting_for_date";
@@ -7838,6 +7891,9 @@ export class BotService {
         }
 
         case "waiting_for_date": {
+          const ambiguousDoctorMatches = mapAmbiguousDoctorPreference(normalizedTranscript, runtimeDoctors);
+          const directDoctor = mapDoctorPreference(normalizedTranscript, session, runtimeDoctors);
+          const specialization = mapSpecialization(normalizedTranscript, runtimeDoctors);
           const acceptedOffer = session.availabilityOfferedDate && mapYesNo(normalizedTranscript) === "yes";
           const rejectedOfferForAnotherDay = !!session.availabilityOfferedDate && wantsAnotherDay(normalizedTranscript);
           const offeredSlotSelection = session.availabilityOfferedDate
@@ -7850,7 +7906,50 @@ export class BotService {
               ? getConversationMemory(session).lastDay
               : mapDateFlexible(normalizedTranscript);
 
-          if (rejectedOfferForAnotherDay && !date) {
+          if (asksDoctorList(normalizedTranscript) || hasDetectedIntent(intentLayer, "DOCTOR_INFO", 0.6)) {
+            reply = buildAvailableDoctorsReply(runtimeDoctors, prompts);
+            stage = "waiting_for_doctor_preference";
+            action = "share_available_doctors_during_date";
+          } else if (ambiguousDoctorMatches.length > 0) {
+            reply = buildDoctorDisambiguationPrompt(ambiguousDoctorMatches, prompts);
+            stage = "waiting_for_doctor_preference";
+            action = "clarify_doctor_preference_during_date";
+          } else if (directDoctor && directDoctor.doctorPreference === "specific_doctor" && directDoctor.selectedDoctor !== session.selectedDoctor) {
+            const selectedDoctor = runtimeDoctors.find((doctor) => doctor.name === directDoctor.selectedDoctor) ?? null;
+            session = updateSession(session, {
+              selectedSpecialization: selectedDoctor?.specialization ?? session.selectedSpecialization,
+              selectedDoctor: directDoctor.selectedDoctor,
+              doctorPreference: directDoctor.doctorPreference
+            });
+
+            if (date) {
+              session = updateSession(session, {
+                preferredDate: date,
+                preferredTime: acceptedOffer ? session.availabilityOfferedTime ?? session.preferredTime : session.preferredTime,
+                availabilityOfferedDate: acceptedOffer ? null : session.availabilityOfferedDate,
+                availabilityOfferedTime: acceptedOffer ? null : session.availabilityOfferedTime,
+                availabilityOfferedSlots: acceptedOffer ? [] : session.availabilityOfferedSlots
+              });
+              const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
+              session = next?.session ?? session;
+              reply = next?.reply ?? withExtraInstructions(prompts.askTime, prompts);
+              stage = next?.stage ?? "waiting_for_time";
+              action = "capture_doctor_and_date";
+            } else {
+              reply = withExtraInstructions(prompts.askDate, prompts);
+              stage = "waiting_for_date";
+              action = "capture_doctor_preference_during_date";
+            }
+          } else if (specialization && specialization.specialization !== session.selectedSpecialization) {
+            session = updateSession(session, {
+              selectedSpecialization: specialization.specialization,
+              selectedDoctor: null,
+              doctorPreference: null
+            });
+            reply = buildDoctorPreferenceSelectionPrompt(session, runtimeDoctors, prompts);
+            stage = "waiting_for_doctor_preference";
+            action = "capture_specialization_during_date";
+          } else if (rejectedOfferForAnotherDay && !date) {
             session = updateSession(session, {
               preferredDate: null,
               preferredTime: null,
@@ -7869,7 +7968,7 @@ export class BotService {
               availabilityOfferedTime: null,
               availabilityOfferedSlots: []
             });
-            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
             session = next?.session ?? session;
             reply = next?.reply ?? withExtraInstructions(prompts.askPatientName, prompts);
             stage = next?.stage ?? "waiting_for_patient_name";
@@ -7882,7 +7981,7 @@ export class BotService {
               availabilityOfferedTime: acceptedOffer ? null : session.availabilityOfferedTime,
               availabilityOfferedSlots: acceptedOffer ? [] : session.availabilityOfferedSlots
             });
-            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
             session = next?.session ?? session;
             reply = next?.reply ?? withExtraInstructions(prompts.askTime, prompts);
             stage = next?.stage ?? "waiting_for_time";
@@ -7906,7 +8005,7 @@ export class BotService {
               availabilityOfferedTime: acceptedOffer ? null : session.availabilityOfferedTime,
               availabilityOfferedSlots: acceptedOffer ? [] : session.availabilityOfferedSlots
             });
-            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
             session = next?.session ?? session;
             reply = next?.reply ?? withExtraInstructions(prompts.askPatientName, prompts);
             stage = next?.stage ?? "waiting_for_patient_name";
@@ -7933,7 +8032,7 @@ export class BotService {
 
           if (patientName) {
             session = updateSession(session, { patientName });
-            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
             session = next?.session ?? session;
             reply = next?.reply ?? withExtraInstructions(prompts.askMobile, prompts);
             stage = next?.stage ?? "waiting_for_mobile";
@@ -7980,7 +8079,7 @@ export class BotService {
               bookingContactConfirmed: true,
               bookingContactConfirmationPending: false
             });
-            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
             session = next?.session ?? session;
             reply = next?.reply ?? withExtraInstructions(prompts.askPatientType, prompts);
             stage = next?.stage ?? "waiting_for_patient_type";
@@ -8052,7 +8151,7 @@ export class BotService {
 
           if (patientType) {
             session = updateSession(session, { patientType });
-            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, prompts, intelligence) : null;
+            const next = intelligence.askOnlyMissingFields ? askNextMissingField(session, runtimeDoctors, prompts, intelligence) : null;
             session = next?.session ?? session;
             reply = next?.reply ?? buildConfirmationSummary(session, prompts);
             stage = next?.stage ?? "confirming";
@@ -8068,7 +8167,7 @@ export class BotService {
           const confirmation = mapConfirmationFlexible(normalizedTranscript);
 
           if (confirmation === "change_doctor") {
-            reply = withExtraInstructions(prompts.askDoctorPreference, prompts);
+            reply = buildDoctorPreferenceSelectionPrompt(session, runtimeDoctors, prompts);
             stage = "waiting_for_doctor_preference";
             action = "change_doctor";
           } else if (confirmation === "change_time") {
@@ -8688,12 +8787,11 @@ export class BotService {
       && !inferenceResult.isEmergency
       && !["confirming", "reschedule_confirming", "cancel_confirming", "booked", "cancelled"].includes(session.bookingStage)
     ) {
-      const inferredDoctor = findDoctorForInferredSpecialization(inferenceResult.specialization, runtimeDoctors);
       session = updateSession(session, {
         selectedSpecialization: inferenceResult.specialization,
-        selectedDoctor: inferredDoctor?.name ?? session.selectedDoctor,
-        doctorPreference: inferredDoctor ? "earliest_available" : session.doctorPreference,
-        bookingStage: session.preferredDate ? session.bookingStage : "waiting_for_date"
+        selectedDoctor: session.selectedDoctor,
+        doctorPreference: session.doctorPreference,
+        bookingStage: session.preferredDate ? session.bookingStage : "waiting_for_doctor_preference"
       });
     }
 
