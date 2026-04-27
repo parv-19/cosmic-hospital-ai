@@ -111,6 +111,10 @@ function recordMatchesDate(record: CallRecord, dateValue: string) {
   return toDateInputValue(new Date(record.startedAt)) === dateValue;
 }
 
+function normalizeOutcome(outcome: string | null | undefined) {
+  return String(outcome ?? "").trim().toLowerCase();
+}
+
 function shortDay(dateKey: string) {
   return new Date(dateKey).toLocaleDateString("en-IN", { weekday: "short" });
 }
@@ -122,20 +126,20 @@ function buildPastWeekSeries(calls: CallRecord[]) {
     d.setDate(today.getDate() - (6 - index));
     const key = toDateInputValue(d);
     const dayCalls = calls.filter((call) => toDateInputValue(new Date(call.startedAt)) === key);
-    const booked = dayCalls.filter((call) => call.outcome === "BOOKED").length;
+    const booked = dayCalls.filter((call) => normalizeOutcome(call.outcome).includes("book")).length;
     return { label: shortDay(key), calls: dayCalls.length, booked };
   });
 }
 
 function buildOutcomeRows(calls: CallRecord[]) {
   const mapping = [
-    { label: "Booked", key: "BOOKED", color: "from-emerald-400 to-emerald-500" },
-    { label: "Transferred", key: "TRANSFERRED", color: "from-amber-400 to-amber-500" },
-    { label: "Failed", key: "FAILED", color: "from-rose-400 to-rose-500" },
+    { label: "Booked", match: (outcome: string) => outcome.includes("book"), color: "from-emerald-400 to-emerald-500" },
+    { label: "Transferred", match: (outcome: string) => outcome.includes("transfer"), color: "from-amber-400 to-amber-500" },
+    { label: "Failed", match: (outcome: string) => outcome.includes("fail"), color: "from-rose-400 to-rose-500" },
   ];
   return mapping.map((item) => ({
     ...item,
-    value: calls.filter((call) => call.outcome === item.key).length,
+    value: calls.filter((call) => item.match(normalizeOutcome(call.outcome))).length,
   }));
 }
 
